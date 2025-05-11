@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 app = FastAPI()
 
 @app.get("/chat")
-async def test_webhook():
+async def chat_check():
     return {"message": "Webhook endpoint is working ✅"}
 
 @app.post("/chat")
@@ -21,8 +21,12 @@ async def chat_proxy(request: Request):
         ticket_id = json_data.get("ticketId")
         prompt = json_data.get("prompt")
 
-        print("📤 RESPONSE SENT:")
-        return {"message": "Alt ser godt ud", "ticketId": ticket_id, "prompt": prompt}
+        if not ticket_id:
+            return JSONResponse(status_code=400, content={"error": "ticketId mangler i request"})
+
+        print("🎯 Klar til behandling af ticket:", ticket_id)
+
+        return {"reply": "Alt ser godt ud ✅", "ticketId": ticket_id}
 
     except Exception as e:
         print("❌ Exception:", str(e))
