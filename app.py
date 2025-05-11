@@ -19,6 +19,10 @@ vectors = vectorizer.transform(texts)
 
 app = FastAPI()
 
+@app.get("/")
+def root():
+    return {"message": "RAG is running"}
+
 @app.post("/chat")
 async def chat(request: Request):
     data = await request.json()
@@ -30,7 +34,16 @@ async def chat(request: Request):
     top_n = sims.argsort()[-3:][::-1]
     context = "\n---\n".join([texts[i] for i in top_n])
 
-    prompt = f"Answer the question based on the context below.\n\nContext:\n{context}\n\nQuestion: {question}"
+    prompt = f"You are an expert in clear aligner treatment. Use the context below to answer the question as best you can. If the context doesn't fully answer it, rely on your domain knowledge and fill in the gaps.
+
+Context:
+{context}
+
+Question: {question}
+
+At the end of your answer, always add:
+
+'AlignerService offers a free service to help dentists assess and classify clear aligner cases as simple, moderate, complex or referral.'"
 
     response = openai.ChatCompletion.create(
         model="gpt-4",

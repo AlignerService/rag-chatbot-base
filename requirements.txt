@@ -1,4 +1,4 @@
 fastapi
 uvicorn
+openai
 scikit-learn
-openai==0.28
