@@ -1,52 +1,58 @@
+import os
+import requests
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-import openai
-import os
-import json
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-with open("all_chunks.json", "r", encoding="utf-8") as f:
-    documents = json.load(f)
-
-texts = [doc["text"] for doc in documents]
-meta = [(doc.get("title", ""), doc.get("source", doc.get("url", ""))) for doc in documents]
-
-vectorizer = TfidfVectorizer().fit(texts)
-vectors = vectorizer.transform(texts)
 
 app = FastAPI()
 
+ZOHO_ACCESS_TOKEN = "1000.f6ecbcfad9fe90b41550ae89ac4cc4b1.9a26d1dbc66f267b0fcb172551cfbe48"
+ZOHO_PORTAL = "alignerservice"
+RAG_API_URL = "https://alignerservice-rag.onrender.com/chat"
+
 @app.get("/")
-def root():
-    return {"message": "RAG is running"}
+def health():
+    return {"status": "Proxy server kører."}
 
 @app.post("/chat")
-async def chat(request: Request):
+async def chat_proxy(request: Request):
     data = await request.json()
-    question = data.get("question", "")
+    ticket_id = data.get("ticketId")
+    if not ticket_id:
+        return JSONResponse(status_code=400, content={"error": "ticketId mangler"})
 
-    question_vec = vectorizer.transform([question])
-    sims = cosine_similarity(question_vec, vectors).flatten()
+    # 1. Hent ticket-beskrivelse fra ZoHo Desk
+    ticket_url = f"https://desk.zoho.eu/api/v1/tickets/{ticket_id}"
+    headers = {
+        "Authorization": f"Zoho-oauthtoken {ZOHO_ACCESS_TOKEN}"
+    }
+    r = requests.get(ticket_url, headers=headers)
+    if r.status_code != 200:
+        return JSONResponse(status_code=500, content={"error": "Kunne ikke hente ticket fra ZoHo", "details": r.text})
+    
+    description = r.json().get("description", "No ticket description provided.")
 
-    top_n = sims.argsort()[-3:][::-1]
-    context = "\n---\n".join([texts[i] for i in top_n])
+    # 2. Kald RAG API med beskrivelsen
+    rag_payload = {
+        "question": description
+    }
+    rag_headers = {
+        "Content-Type": "application/json"
+    }
+    rag_response = requests.post(RAG_API_URL, json=rag_payload, headers=rag_headers)
+    if rag_response.status_code != 200:
+        return JSONResponse(status_code=500, content={"error": "Fejl fra RAG API", "details": rag_response.text})
 
-    prompt = (
-        f"You are an expert in clear aligner treatment. "
-        f"Use the context below to answer the question as best you can. "
-        f"If the context doesn't fully answer it, rely on your domain knowledge and fill in the gaps.\n\n"
-        f"Context:\n{context}\n\n"
-        f"Question: {question}\n\n"
-        f"Note: Always end your answer by reminding the user that AlignerService offers a free service to help dentists assess and classify clear aligner cases as simple, moderate, complex or referral."
-    )
+    answer = rag_response.json().get("answer", "[Tomt svar]")
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=700
-    )
+    # 3. Tilføj AI-svar som kommentar i ZoHo
+    comment_url = f"https://desk.zoho.eu/api/v1/tickets/{ticket_id}/comments"
+    comment_payload = {
+        "is_public": False,
+        "content": answer
+    }
+    comment_resp = requests.post(comment_url, json=comment_payload, headers=headers)
 
-    return JSONResponse({"answer": response.choices[0].message["content"].strip()})
+    if comment_resp.status_code != 200:
+        return JSONResponse(status_code=500, content={"error": "Kunne ikke tilføje kommentar", "details": comment_resp.text})
+    
+    return JSONResponse(status_code=200, content={"status": "OK", "answer": answer})
