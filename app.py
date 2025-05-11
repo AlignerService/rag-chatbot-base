@@ -3,10 +3,12 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
+# 👇 Denne route gør ZoHo glad (GET til /chat virker nu)
 @app.get("/chat")
-async def chat_check():
+async def chat_healthcheck():
     return {"message": "Webhook endpoint is working ✅"}
 
+# 👇 Denne route håndterer ZoHo POST-requests som tidligere
 @app.post("/chat")
 async def chat_proxy(request: Request):
     try:
