@@ -1,5 +1,2 @@
 fastapi
 uvicorn
-openai
-sentence-transformers
-numpy
