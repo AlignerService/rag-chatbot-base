@@ -3,14 +3,12 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# 👇 Denne route gør ZoHo glad (GET til /chat virker nu)
 @app.get("/chat")
-async def chat_healthcheck():
+async def test_webhook():
     return {"message": "Webhook endpoint is working ✅"}
 
-# 👇 Denne route håndterer ZoHo POST-requests som tidligere
 @app.post("/chat")
-async def chat_proxy(request: Request):
+async def chat_webhook(request: Request):
     try:
         body = await request.body()
         print("📥 RAW REQUEST BODY:")
@@ -20,15 +18,18 @@ async def chat_proxy(request: Request):
         print("✅ PARSED JSON:")
         print(json_data)
 
-        ticket_id = json_data.get("ticketId")
-        prompt = json_data.get("prompt")
+        ticket_id = json_data.get("ticketId", "N/A")
+        prompt = json_data.get("prompt", "")
+        print("🧠 Prompt:", prompt)
 
-        if not ticket_id:
-            return JSONResponse(status_code=400, content={"error": "ticketId mangler i request"})
+        # Simuleret svar
+        response = {
+            "reply": f"Tak for din besked om sag {ticket_id}. Vi vender tilbage snarest!"
+        }
 
-        print("🎯 Klar til behandling af ticket:", ticket_id)
-
-        return {"reply": "Alt ser godt ud ✅", "ticketId": ticket_id}
+        print("📤 RESPONSE SENT:")
+        print(response)
+        return JSONResponse(content=response)
 
     except Exception as e:
         print("❌ Exception:", str(e))
