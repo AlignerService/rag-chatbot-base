@@ -15,21 +15,10 @@ async def chat_proxy(request: Request):
         print(json_data)
 
         ticket_id = json_data.get("ticketId")
-        prompt = json_data.get("prompt")
+        if not ticket_id:
+            return JSONResponse(status_code=400, content={"error": "ticketId mangler i request"})
 
-        if not ticket_id or not prompt:
-            return JSONResponse(status_code=400, content={"error": "Missing 'ticketId' or 'prompt'"})
-
-        reply = f"(Dummy response): You asked: '{prompt}'"
-        response_data = {
-            "ticketId": ticket_id,
-            "reply": reply
-        }
-
-        print("📤 RESPONSE SENT:")
-        print(response_data)
-
-        return response_data
+        return {"message": "Alt ser godt ud", "ticketId": ticket_id}
 
     except Exception as e:
         print("❌ Exception:", str(e))
