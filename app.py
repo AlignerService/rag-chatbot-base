@@ -6,7 +6,7 @@ import requests
 import json
 from typing import List
 from openai import OpenAI
-from jiter import embed_texts, load_chunks, find_relevant_chunks
+from jiter import load_chunks, find_relevant_chunks
 
 app = FastAPI()
 
