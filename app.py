@@ -1,3 +1,4 @@
+
 import os
 import requests
 from fastapi import FastAPI
@@ -27,7 +28,7 @@ async def generate_answer(request: TicketRequest):
     if response.status_code != 200:
         return JSONResponse(
             status_code=500,
-            content={"reply": "Kunne ikke hente ticket-data fra ZoHo."}
+            content={"reply": f"Fejl ved hentning af ticket: {response.status_code}, body: {response.text}"}
         )
 
     threads = response.json().get("data", [])
