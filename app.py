@@ -24,16 +24,31 @@ async def generate_answer(request: TicketRequest):
     headers = {"Authorization": f"Zoho-oauthtoken {zoho_token}"}
     response = requests.get(zoho_url, headers=headers)
 
+    # → Fejl? Returnér debug-information
     if response.status_code != 200:
         return JSONResponse(
             status_code=500,
-            content={"reply": "Kunne ikke hente ticket-data fra ZoHo."}
+            content={
+                "reply": "Kunne ikke hente ticket-data fra ZoHo.",
+                "status_code": response.status_code,
+                "zoho_response": response.text
+            }
         )
 
+    # 2. Saml ticket-historikken
     threads = response.json().get("data", [])
+    if not threads:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "reply": "Ingen tråde fundet for dette ticket ID.",
+                "ticketId": ticket_id
+            }
+        )
+
     full_thread_text = "\n\n".join([t.get("content", "") for t in threads])
 
-    # 2. Spørg OpenAI med historik og spørgsmål
+    # 3. Send prompt til OpenAI
     prompt = f"Ticket historik:\n{full_thread_text}\n\nSpørgsmål: {user_question}\n\nSvar:"
     chat_completion = openai_client.chat.completions.create(
         model="gpt-4",
@@ -44,4 +59,4 @@ async def generate_answer(request: TicketRequest):
     )
 
     final_answer = chat_completion.choices[0].message.content.strip()
-    return {"reply": final_answer}
+    return {"reply": final_answer}"
