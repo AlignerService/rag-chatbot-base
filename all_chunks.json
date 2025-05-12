@@ -8,7 +8,8 @@
       "journal",
       "invoiced"
     ],
-    "date": "2023-05-01"
+    "date": "2023-05-01",
+    "source_type": "ticket"
   },
   {
     "source": "ticket_107391000004720532",
@@ -18,7 +19,8 @@
       "tps",
       "invoiced"
     ],
-    "date": "2023-06-28"
+    "date": "2023-06-28",
+    "source_type": "ticket"
   },
   {
     "source": "ticket_107391000005469756",
@@ -28,7 +30,8 @@
       "tps",
       "invoiced"
     ],
-    "date": "2023-08-23"
+    "date": "2023-08-23",
+    "source_type": "ticket"
   },
   {
     "source": "ticket_107391000005845632",
@@ -38,7 +41,8 @@
       "tps",
       "invoiced"
     ],
-    "date": "2023-09-14"
+    "date": "2023-09-14",
+    "source_type": "ticket"
   },
   {
     "source": "ticket_107391000006067077",
@@ -48,7 +52,8 @@
       "tps",
       "invoiced"
     ],
-    "date": "2023-09-26"
+    "date": "2023-09-26",
+    "source_type": "ticket"
   },
   {
     "source": "ticket_107391000006190075",
@@ -58,7 +63,8 @@
       "tps",
       "invoiced"
     ],
-    "date": "2023-10-04"
+    "date": "2023-10-04",
+    "source_type": "ticket"
   },
   {
     "source": "ticket_107391000008290829",
@@ -69,6 +75,7 @@
       "journal",
       "invoiced"
     ],
-    "date": "2024-01-08"
+    "date": "2024-01-08",
+    "source_type": "ticket"
   }
 ]
