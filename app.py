@@ -8,8 +8,7 @@ from openai import OpenAI
 app = FastAPI()
 
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-zoho_token = os.getenv("ZOHO_ACCESS_TOKEN")
-zoho_org_id = os.getenv("ZOHO_ORGID")
+zoho_token = os.getenv("ZOHO_ACCESS_TOKEN")  # <-- rettet her
 
 class TicketRequest(BaseModel):
     ticketId: str
@@ -20,11 +19,11 @@ async def generate_answer(request: TicketRequest):
     ticket_id = request.ticketId
     user_question = request.question
 
-    # Hent ticket-tråden fra ZoHo
+    # 1. Hent hele ticket-tråden fra ZoHo
     zoho_url = f"https://desk.zoho.eu/api/v1/tickets/{ticket_id}/threads"
     headers = {
         "Authorization": f"Zoho-oauthtoken {zoho_token}",
-        "orgId": zoho_org_id
+        "orgId": "20082363592"  # ← medsendt org ID
     }
     response = requests.get(zoho_url, headers=headers)
 
@@ -37,7 +36,7 @@ async def generate_answer(request: TicketRequest):
     threads = response.json().get("data", [])
     full_thread_text = "\n\n".join([t.get("content", "") for t in threads])
 
-    # Brug OpenAI til at generere svar
+    # 2. Spørg OpenAI med historik og spørgsmål
     prompt = f"Ticket historik:\n{full_thread_text}\n\nSpørgsmål: {user_question}\n\nSvar:"
     chat_completion = openai_client.chat.completions.create(
         model="gpt-4",
@@ -48,4 +47,4 @@ async def generate_answer(request: TicketRequest):
     )
 
     final_answer = chat_completion.choices[0].message.content.strip()
-    return {"reply": final_answer}
+    return {"reply": final_answer}"
