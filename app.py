@@ -47,4 +47,4 @@ async def generate_answer(request: TicketRequest):
     )
 
     final_answer = chat_completion.choices[0].message.content.strip()
-    return {"reply": final_answer}"
+    return {"reply": final_answer}
