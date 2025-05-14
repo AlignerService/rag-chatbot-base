@@ -5,7 +5,7 @@ import os
 
 app = FastAPI()
 
-DATABASE_PATH = "/Users/macpro/Dropbox/AlignerService/RAG:Database:aktiv/knowledge.sqlite"
+DATABASE_PATH = os.getenv("KNOWLEDGE_DB_PATH", "knowledge.sqlite")
 
 class UpdateRequest(BaseModel):
     ticket_id: str
