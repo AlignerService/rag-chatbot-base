@@ -2,48 +2,73 @@
 import os
 import sqlite3
 import openai
-from fastapi import FastAPI, Request
+import logging
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from fastapi.responses import JSONResponse
+from typing import List
+import requests
 
 app = FastAPI()
+logging.basicConfig(level=logging.INFO)
 
-# OpenAI klient til ny API syntaks
-client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Miljøvariabler
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ZOHO_CLIENT_ID = os.getenv("ZOHO_CLIENT_ID")
+ZOHO_CLIENT_SECRET = os.getenv("ZOHO_CLIENT_SECRET")
+ZOHO_REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
+DATABASE_PATH = "knowledge.sqlite"
 
-class TicketRequest(BaseModel):
-    ticketId: str
+openai.api_key = OPENAI_API_KEY
+
+class QueryPayload(BaseModel):
     question: str
+    ticketId: str
 
-def query_database(question: str):
-    conn = sqlite3.connect("alignerservice_chunks.db")
+def get_context_from_sqlite(question: str, k: int = 5) -> List[str]:
+    conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
-
-    cursor.execute("SELECT content FROM documents WHERE content LIKE ?", ('%' + question[:20] + '%',))
-    results = cursor.fetchall()
+    cursor.execute("SELECT content FROM chunks ORDER BY RANDOM() LIMIT ?", (k,))
+    rows = cursor.fetchall()
     conn.close()
+    return [row[0] for row in rows]
 
-    return [row[0] for row in results]
+def refresh_zoho_token() -> str:
+    url = "https://accounts.zoho.eu/oauth/v2/token"
+    params = {
+        "refresh_token": ZOHO_REFRESH_TOKEN,
+        "client_id": ZOHO_CLIENT_ID,
+        "client_secret": ZOHO_CLIENT_SECRET,
+        "grant_type": "refresh_token",
+    }
+    response = requests.post(url, params=params)
+    if response.status_code == 200:
+        access_token = response.json().get("access_token")
+        return access_token
+    else:
+        logging.error("Failed to refresh ZoHo token")
+        return None
 
 @app.post("/answer")
-async def generate_answer(request: Request, payload: TicketRequest):
+def answer(payload: QueryPayload):
     try:
-        context_chunks = query_database(payload.question)
-        context = "\n\n".join(context_chunks[:5])  # max 5 relevante stykker
+        context_chunks = get_context_from_sqlite(payload.question)
+        context_str = "\n---\n".join(context_chunks)
 
         messages = [
-            {"role": "system", "content": "Du er en hjælpsom AI-assistent for AlignerService, der besvarer kundeservicehenvendelser professionelt og præcist."},
-            {"role": "user", "content": f"Spørgsmål: {payload.question}\n\nRelevant kontekst:
-{context}"}
+            {"role": "system", "content": "Du er en hjælpsom AI-assistent for AlignerService. Brug kun information fra konteksten."},
+            {"role": "user", "content": f"Spørgsmål: {payload.question}
+
+Relevant kontekst:
+{context_str}"},
         ]
 
-        response = client.chat.completions.create(
+        completion = openai.chat.completions.create(
             model="gpt-4",
-            messages=messages
+            messages=messages,
         )
-
-        final_answer = response.choices[0].message.content.strip()
-        return {"reply": final_answer}
+        reply = completion.choices[0].message.content
+        return {"reply": reply}
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"reply": f"Fejl ved OpenAI-kald: {str(e)}"})
+        logging.exception("Fejl ved OpenAI-kald")
+        raise HTTPException(status_code=500, detail=f"Fejl ved OpenAI-kald: {str(e)}")
