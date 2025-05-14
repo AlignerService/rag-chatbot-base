@@ -1,61 +1,55 @@
+
 import os
 import sqlite3
 import openai
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import List
+from starlette.middleware.cors import CORSMiddleware
 
-# Initialize FastAPI app
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
 app = FastAPI()
 
-# Define input data model
-class Query(BaseModel):
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class Payload(BaseModel):
     question: str
+    ticketId: str = ""
 
-# Load environment variables
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DB_PATH = os.getenv("DB_PATH", "knowledge.sqlite")
-
-# Check OpenAI key presence
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY is not set in environment variables.")
-
-openai.api_key = OPENAI_API_KEY
-
-# Helper to retrieve context from SQLite
-def get_context_from_sqlite(question: str) -> str:
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT content FROM chunks")
-        rows = cursor.fetchall()
-        context = "
-
-".join(row[0] for row in rows[:10])  # limit to first 10 rows
-        conn.close()
-        return context
-    except Exception as e:
-        raise RuntimeError(f"Database error: {e}")
-
-# Main API endpoint
 @app.post("/answer")
-async def answer(payload: Query):
+async def answer(payload: Payload):
     try:
-        context = get_context_from_sqlite(payload.question)
-        messages = [
-            {"role": "system", "content": "Du er en hjælpsom AI-assistent for AlignerService, som svarer præcist og venligt på danske spørgsmål fra tandlæger."},
-            {"role": "user", "content": f"Spørgsmål: {payload.question}
+        conn = sqlite3.connect("knowledge.sqlite")
+        cursor = conn.cursor()
 
-Relevant kontekst:
-{context}"}
+        query = f"%{payload.question.lower()}%"
+        cursor.execute("SELECT chunk FROM chunks WHERE chunk LIKE ?", (query,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            context = "Ingen relevant kontekst fundet i databasen."
+        else:
+            context = "\n\n".join(row[0] for row in rows[:5])
+
+        messages = [
+            {"role": "system", "content": "Du er en hjælpsom AI-assistent for en dansk aligner-supportservice. Giv præcise og venlige svar baseret på konteksten."},
+            {"role": "user", "content": f"Spørgsmål: {payload.question}\n\nRelevant kontekst: {context}"}
         ]
 
         response = openai.chat.completions.create(
             model="gpt-4",
             messages=messages,
-            temperature=0.7,
+            temperature=0.3
         )
-
         return {"reply": response.choices[0].message.content.strip()}
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Fejl: {str(e)}")
