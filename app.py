@@ -1,57 +1,49 @@
 
 import os
 import sqlite3
+import openai
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
-from typing import List
-import openai
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-DB_PATH = "knowledge.sqlite"
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# OpenAI klient til ny API syntaks
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-class ChatRequest(BaseModel):
+class TicketRequest(BaseModel):
+    ticketId: str
     question: str
 
-def get_chunks_from_db() -> List[str]:
-    conn = sqlite3.connect(DB_PATH)
+def query_database(question: str):
+    conn = sqlite3.connect("alignerservice_chunks.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT content FROM chunks")
-    chunks = [row[0] for row in cursor.fetchall()]
+
+    cursor.execute("SELECT content FROM documents WHERE content LIKE ?", ('%' + question[:20] + '%',))
+    results = cursor.fetchall()
     conn.close()
-    return chunks
 
-def build_prompt(question: str, context_chunks: List[str]) -> str:
-    context = "\n---\n".join(context_chunks[:10])  # begræns til 10 chunks
-    prompt = f"""Besvar spørgsmålet baseret på nedenstående viden. Hvis du ikke ved det, så sig det ærligt.
-
-Viden:
-{context}
-
-Spørgsmål:
-{question}
-
-Svar:
-"""
-    return prompt
+    return [row[0] for row in results]
 
 @app.post("/answer")
-async def answer(req: ChatRequest):
-    question = req.question
-    chunks = get_chunks_from_db()
-    prompt = build_prompt(question, chunks)
-
+async def generate_answer(request: Request, payload: TicketRequest):
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "Du er en hjælpsom AI-assistent for AlignerService. Vær præcis og brug vores tone of voice."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-        reply = response.choices[0].message.content.strip()
-    except Exception as e:
-        reply = f"Fejl ved OpenAI-kald: {str(e)}"
+        context_chunks = query_database(payload.question)
+        context = "\n\n".join(context_chunks[:5])  # max 5 relevante stykker
 
-    return {"reply": reply}
+        messages = [
+            {"role": "system", "content": "Du er en hjælpsom AI-assistent for AlignerService, der besvarer kundeservicehenvendelser professionelt og præcist."},
+            {"role": "user", "content": f"Spørgsmål: {payload.question}\n\nRelevant kontekst:
+{context}"}
+        ]
+
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=messages
+        )
+
+        final_answer = response.choices[0].message.content.strip()
+        return {"reply": final_answer}
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"reply": f"Fejl ved OpenAI-kald: {str(e)}"})
