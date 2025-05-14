@@ -1,24 +1,21 @@
-
 import os
-import sqlite3
 import logging
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import json
 from openai import OpenAI
+from dotenv import load_dotenv
 
-# Init logging
+load_dotenv()
+
+# Setup logging
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Load environment variables
-DB_PATH = os.getenv("DB_PATH", "knowledge.sqlite")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Initialize FastAPI and OpenAI
 app = FastAPI()
-client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Enable CORS for browser clients
+# CORS (valgfrit, men ofte nødvendigt for frontend integration)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,34 +24,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class QuestionPayload(BaseModel):
+# OpenAI client
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+# Load chunks from JSON file
+def load_all_chunks_from_json(path="all_chunks.json"):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def get_context(question: str, top_k: int = 2) -> str:
+    all_chunks = load_all_chunks_from_json()
+    return "\n\n".join(all_chunks[:top_k])
+
+# Request model
+class QuestionRequest(BaseModel):
     question: str
 
-def get_context_from_db(question: str, top_k: int = 5) -> str:
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT chunk FROM documents")
-            all_chunks = [row[0] for row in cursor.fetchall()]
-            # TODO: Replace with semantic search
-            return "\n\n".join(all_chunks[:top_k])
-    except Exception as e:
-        logging.error(f"Database error: {e}")
-        return ""
-
 @app.post("/answer")
-async def answer(payload: QuestionPayload):
-    logging.info(f"Received question: {payload.question}")
-    context = get_context_from_db(payload.question)
+async def answer_question(payload: QuestionRequest):
+    logger.info(f"Received question: {payload.question}")
+
+    try:
+        context = get_context(payload.question)
+    except Exception as e:
+        logger.error(f"Context error: {str(e)}")
+        return {"answer": "Beklager – jeg kunne ikke hente konteksten."}
+
     try:
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "Du er en hjælpsom AI-assistent for AlignerService, der altid henviser til at I tilbyder gratis vurdering og case-kategorisering."},
-                {"role": "user", "content": f"Spørgsmål: {payload.question}\n\nRelevant kontekst: {context}"}
-            ]
+                {"role": "system", "content": "Du er en hjælpsom AI-assistent for AlignerService, der svarer præcist og professionelt."},
+                {"role": "user", "content": f"Spørgsmål: {payload.question}\n\nKontekst: {context}"}
+            ],
+            temperature=0.3
         )
-        return {"reply": response.choices[0].message.content}
+        return {"answer": response.choices[0].message.content}
     except Exception as e:
-        logging.error(f"OpenAI call failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Fejl ved OpenAI-kald: {str(e)}")
+        logger.error(f"OpenAI call failed: {str(e)}")
+        return {"answer": "Beklager – der skete en fejl, da jeg forsøgte at generere et svar."}
