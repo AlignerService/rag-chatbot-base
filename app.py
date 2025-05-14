@@ -1,21 +1,17 @@
 import os
 import logging
+import json
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import json
 from openai import OpenAI
 from dotenv import load_dotenv
 
+# Indlæs miljøvariabler fra .env fil
 load_dotenv()
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# CORS (valgfrit, men ofte nødvendigt for frontend integration)
+# Aktiver CORS hvis nødvendigt
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,42 +20,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# OpenAI client
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# Initialisér OpenAI-klient
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Load chunks from JSON file
-def load_all_chunks_from_json(path="all_chunks.json"):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+# Konfigurer logging
+logging.basicConfig(level=logging.INFO)
 
-def get_context(question: str, top_k: int = 2) -> str:
-    all_chunks = load_all_chunks_from_json()
-    return "\n\n".join(all_chunks[:top_k])
-
-# Request model
-class QuestionRequest(BaseModel):
-    question: str
+def get_context_from_json(question: str, top_k: int = 3) -> str:
+    try:
+        with open("all_chunks.json", "r", encoding="utf-8") as f:
+            all_chunks = json.load(f)
+        chunks = [item["chunk"] for item in all_chunks if "chunk" in item][:top_k]
+        return "\n\n".join(chunks)
+    except Exception as e:
+        logging.error(f"Context error: {e}")
+        return ""
 
 @app.post("/answer")
-async def answer_question(payload: QuestionRequest):
-    logger.info(f"Received question: {payload.question}")
-
+async def answer(request: Request):
     try:
-        context = get_context(payload.question)
-    except Exception as e:
-        logger.error(f"Context error: {str(e)}")
-        return {"answer": "Beklager – jeg kunne ikke hente konteksten."}
+        data = await request.json()
+        question = data.get("question", "")
+        logging.info(f"Received question: {question}")
+        context = get_context_from_json(question)
+        if not context:
+            return {"answer": "Beklager, der opstod en fejl under hentning af konteksten."}
 
-    try:
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "Du er en hjælpsom AI-assistent for AlignerService, der svarer præcist og professionelt."},
-                {"role": "user", "content": f"Spørgsmål: {payload.question}\n\nKontekst: {context}"}
+                {"role": "system", "content": "Du er en hjælpsom AI-assistent for tandlæger. Brug kun viden fra konteksten nedenfor."},
+                {"role": "user", "content": f"Kontekst: {context}\n\nSpørgsmål: {question}"},
             ],
-            temperature=0.3
         )
         return {"answer": response.choices[0].message.content}
     except Exception as e:
-        logger.error(f"OpenAI call failed: {str(e)}")
-        return {"answer": "Beklager – der skete en fejl, da jeg forsøgte at generere et svar."}
+        logging.error(f"API error: {e}")
+        return {"answer": "Beklager, der opstod en fejl under behandlingen af dit spørgsmål."}
