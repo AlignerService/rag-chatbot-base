@@ -1,5 +1,2 @@
-fastapi
-uvicorn
-requests
-openai
-python-dotenv
+fastapi==0.115.2
+uvicorn==0.34.2
