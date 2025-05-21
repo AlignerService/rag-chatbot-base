@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 import sqlite3
-import dropbox
 import os
 import requests
 from datetime import datetime
@@ -15,20 +14,24 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Miljøvariabler
-DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
+DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
+DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
+DROPBOX_CLIENT_ID = os.getenv("DROPBOX_CLIENT_ID")
+DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET")
 DROPBOX_DB_PATH = os.getenv("DROPBOX_DB_PATH", "/knowledge.sqlite")
 TEMP_LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
+
 CLIENT_ID = os.getenv("ZOHO_CLIENT_ID")
 CLIENT_SECRET = os.getenv("ZOHO_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
 TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 API_URL = "https://desk.zoho.eu/api/v1"
 
-dbx = dropbox.Dropbox(DROPBOX_TOKEN)
-
 # Tjek for manglende miljøvariabler
 required_env_vars = {
-    "DROPBOX_TOKEN": DROPBOX_TOKEN,
+    "DROPBOX_REFRESH_TOKEN": DROPBOX_REFRESH_TOKEN,
+    "DROPBOX_CLIENT_ID": DROPBOX_CLIENT_ID,
+    "DROPBOX_CLIENT_SECRET": DROPBOX_CLIENT_SECRET,
     "ZOHO_CLIENT_ID": CLIENT_ID,
     "ZOHO_CLIENT_SECRET": CLIENT_SECRET,
     "ZOHO_REFRESH_TOKEN": REFRESH_TOKEN
@@ -90,6 +93,22 @@ def get_valid_access_token():
         logger.error(f"❌ Error obtaining ZoHo token: {e}")
         raise HTTPException(status_code=500, detail="Failed to get ZoHo access token")
 
+def get_dropbox_access_token():
+    payload = {
+        "grant_type": "refresh_token",
+        "refresh_token": DROPBOX_REFRESH_TOKEN,
+        "client_id": DROPBOX_CLIENT_ID,
+        "client_secret": DROPBOX_CLIENT_SECRET
+    }
+    try:
+        response = requests.post("https://api.dropbox.com/oauth2/token", data=payload, timeout=10)
+        response.raise_for_status()
+        token_data = response.json()
+        return token_data["access_token"]
+    except Exception as e:
+        logger.error(f"❌ Failed to refresh Dropbox token: {e}")
+        raise HTTPException(status_code=500, detail="Failed to refresh Dropbox token")
+
 def get_ticket_thread(ticket_id):
     token = get_valid_access_token()
     headers = {"Authorization": f"Zoho-oauthtoken {token}"}
@@ -133,8 +152,15 @@ def store_ticket_thread(ticket_id, thread_data):
     conn.close()
 
     try:
+        access_token = get_dropbox_access_token()
         with open(TEMP_LOCAL_DB_PATH, "rb") as f:
-            dbx.files_upload(f.read(), DROPBOX_DB_PATH, mode=dropbox.files.WriteMode.overwrite)
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Dropbox-API-Arg": f'{{"path": "{DROPBOX_DB_PATH}","mode": "overwrite"}}',
+                "Content-Type": "application/octet-stream"
+            }
+            response = requests.post("https://content.dropboxapi.com/2/files/upload", headers=headers, data=f)
+            response.raise_for_status()
         logger.info("✅ Uploaded SQLite DB to Dropbox")
     except Exception as e:
         logger.error(f"❌ Dropbox upload failed: {e}")
