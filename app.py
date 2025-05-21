@@ -115,7 +115,6 @@ def store_ticket_thread(ticket_id, thread_data):
         )
     ''')
 
-    # Bevar historik og undgå dubletter i stedet for at slette gamle poster
     values = []
     for item in thread_data.get("data", []):
         sender = item.get("fromEmail") or item.get("sender") or "unknown"
