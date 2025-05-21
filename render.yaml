@@ -1,15 +1,17 @@
-
 services:
   - type: web
-    name: alignerservice-rag
+    name: rag-chatbot-base
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port 10000
     autoDeploy: true
-    buildFilter:
-      paths:
-        included:
-          - app.py
-          - requirements.txt
-          - *.json
+    envVars:
+      - key: DROPBOX_TOKEN
+        fromEnvVar: DROPBOX_TOKEN
+      - key: ZOHO_CLIENT_ID
+        fromEnvVar: ZOHO_CLIENT_ID
+      - key: ZOHO_CLIENT_SECRET
+        fromEnvVar: ZOHO_CLIENT_SECRET
+      - key: ZOHO_REFRESH_TOKEN
+        fromEnvVar: ZOHO_REFRESH_TOKEN
