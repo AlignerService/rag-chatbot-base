@@ -149,3 +149,6 @@ async def update_ticket(req: UpdateRequest):
 
     store_ticket_thread(ticket_id, thread)
     return {"status": "Ticket thread saved", "ticketId": ticket_id}
+
+from webhook_integration import router as webhook_router
+app.include_router(webhook_router)
