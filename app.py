@@ -202,5 +202,6 @@ def inspect_ticket(ticket_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Tilføj webhook routing
 from webhook_integration import router as webhook_router
 app.include_router(webhook_router)
