@@ -21,7 +21,7 @@ TEMP_LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 CLIENT_ID = os.getenv("ZOHO_CLIENT_ID")
 CLIENT_SECRET = os.getenv("ZOHO_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
-TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
+TOKEN_URL = "https://accounts.zoho.com/oauth/v2/token"
 API_URL = "https://desk.zoho.eu/api/v1"
 
 dbx = dropbox.Dropbox(DROPBOX_TOKEN)
