@@ -14,7 +14,7 @@ DROPBOX_DB_PATH = "/knowledge.sqlite"
 TEMP_LOCAL_DB_PATH = "/tmp/knowledge.sqlite"
 dbx = dropbox.Dropbox(DROPBOX_TOKEN)
 
-# ZoHo OAuth credentials (hentes nu fra Render miljøvariabler)
+# ZoHo OAuth credentials (hentes fra Render miljøvariabler)
 CLIENT_ID = os.getenv("ZOHO_CLIENT_ID")
 CLIENT_SECRET = os.getenv("ZOHO_CLIENT_SECRET")
 REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
