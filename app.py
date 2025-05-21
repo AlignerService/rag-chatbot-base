@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 import sqlite3
 import dropbox
@@ -138,17 +138,25 @@ def store_ticket_thread(ticket_id, thread_data):
         logger.error(f"❌ Dropbox upload failed: {e}")
 
 @app.post("/update_ticket")
-async def update_ticket(req: UpdateRequest):
-    ticket_id = req.ticketId
-    if not ticket_id or not ticket_id.strip().isalnum():
-        raise HTTPException(status_code=400, detail="Invalid ticketId format")
+async def update_ticket(req: Request):
+    try:
+        body = await req.json()
+        logger.info(f"🔍 REQUEST BODY: {body}")
+        ticket_id = body.get("ticketId")
+        if not ticket_id or not ticket_id.strip().isalnum():
+            raise HTTPException(status_code=400, detail="Invalid ticketId format")
 
-    thread = get_ticket_thread(ticket_id)
-    if not thread.get("data"):
-        raise HTTPException(status_code=404, detail="No conversations found for ticket")
+        thread = get_ticket_thread(ticket_id)
+        if not thread.get("data"):
+            raise HTTPException(status_code=404, detail="No conversations found for ticket")
 
-    store_ticket_thread(ticket_id, thread)
-    return {"status": "Ticket thread saved", "ticketId": ticket_id}
+        store_ticket_thread(ticket_id, thread)
+        return {"status": "Ticket thread saved", "ticketId": ticket_id}
 
+    except Exception as e:
+        logger.error(f"❌ Exception in /update_ticket: {e}")
+        raise HTTPException(status_code=500, detail="Failed in update_ticket")
+
+# Importér webhook route
 from webhook_integration import router as webhook_router
 app.include_router(webhook_router)
