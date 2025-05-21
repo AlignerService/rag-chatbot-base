@@ -19,3 +19,5 @@ services:
         value: /knowledge.sqlite
       - key: LOCAL_DB_PATH
         value: /tmp/knowledge.sqlite
+      - key: DATABASE_PATH
+        value: /tmp/knowledge.sqlite
