@@ -6,6 +6,7 @@ import requests
 from datetime import datetime
 import logging
 import html
+import openai
 
 app = FastAPI()
 
@@ -27,6 +28,9 @@ REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
 TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 API_URL = "https://desk.zoho.eu/api/v1"
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai.api_key = OPENAI_API_KEY
+
 # Tjek for manglende miljøvariabler
 required_env_vars = {
     "DROPBOX_REFRESH_TOKEN": DROPBOX_REFRESH_TOKEN,
@@ -34,7 +38,8 @@ required_env_vars = {
     "DROPBOX_CLIENT_SECRET": DROPBOX_CLIENT_SECRET,
     "ZOHO_CLIENT_ID": CLIENT_ID,
     "ZOHO_CLIENT_SECRET": CLIENT_SECRET,
-    "ZOHO_REFRESH_TOKEN": REFRESH_TOKEN
+    "ZOHO_REFRESH_TOKEN": REFRESH_TOKEN,
+    "OPENAI_API_KEY": OPENAI_API_KEY
 }
 missing = [key for key, value in required_env_vars.items() if not value]
 if missing:
@@ -42,6 +47,10 @@ if missing:
 
 class UpdateRequest(BaseModel):
     ticketId: str
+
+class AnswerRequest(BaseModel):
+    ticketId: str
+    question: str
 
 @app.get("/")
 def read_root():
@@ -202,6 +211,46 @@ def inspect_ticket(ticket_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Tilføj webhook routing
+@app.post("/answer")
+def answer_ticket(req: AnswerRequest):
+    try:
+        conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT sender, content, time FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (req.ticketId,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        history = "\n".join([f"{row[0]}: {row[1]}" for row in rows])
+
+        prompt = f"""
+You are a helpful and precise dental support assistant.
+You are responding on behalf of the same person who has replied earlier in this thread.
+
+Previous conversation:
+{history}
+
+New customer message:
+{req.question}
+
+What is the best possible reply?
+Please write only the message to the customer, not an explanation.
+"""
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500
+        )
+
+        answer = response.choices[0].message.content.strip()
+        return {"answer": answer, "ticketId": req.ticketId}
+
+    except Exception as e:
+        logger.error(f"❌ Exception in /answer: {e}")
+        raise HTTPException(status_code=500, detail="Failed in /answer")
+
 from webhook_integration import router as webhook_router
 app.include_router(webhook_router)
