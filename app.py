@@ -6,7 +6,7 @@ import requests
 from datetime import datetime
 import logging
 import html
-import openai
+from typing import List
 
 app = FastAPI()
 
@@ -15,7 +15,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Miljøvariabler
-DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
 DROPBOX_CLIENT_ID = os.getenv("DROPBOX_CLIENT_ID")
 DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET")
@@ -28,18 +27,13 @@ REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
 TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 API_URL = "https://desk.zoho.eu/api/v1"
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
-
-# Tjek for manglende miljøvariabler
 required_env_vars = {
     "DROPBOX_REFRESH_TOKEN": DROPBOX_REFRESH_TOKEN,
     "DROPBOX_CLIENT_ID": DROPBOX_CLIENT_ID,
     "DROPBOX_CLIENT_SECRET": DROPBOX_CLIENT_SECRET,
     "ZOHO_CLIENT_ID": CLIENT_ID,
     "ZOHO_CLIENT_SECRET": CLIENT_SECRET,
-    "ZOHO_REFRESH_TOKEN": REFRESH_TOKEN,
-    "OPENAI_API_KEY": OPENAI_API_KEY
+    "ZOHO_REFRESH_TOKEN": REFRESH_TOKEN
 }
 missing = [key for key, value in required_env_vars.items() if not value]
 if missing:
@@ -62,24 +56,37 @@ def health_check():
 
 @app.get("/tickets")
 def get_ticket(ticket_id: str):
+    ensure_ticket_table_exists()
     if not ticket_id or not ticket_id.strip().isalnum():
         raise HTTPException(status_code=400, detail="Invalid ticketId format")
-
     try:
         conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT sender, content, time FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (ticket_id,))
         rows = cursor.fetchall()
         conn.close()
-
         if not rows:
             raise HTTPException(status_code=404, detail="No data found for this ticket")
-
         return [{"sender": row[0], "content": row[1], "time": row[2]} for row in rows]
-
     except Exception as e:
         logger.error(f"❌ Error reading from SQLite: {e}")
         raise HTTPException(status_code=500, detail="Failed to read ticket data")
+
+def ensure_ticket_table_exists():
+    conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ticket_threads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id TEXT,
+            sender TEXT,
+            content TEXT,
+            time TEXT,
+            UNIQUE(ticket_id, time)
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
 def get_valid_access_token():
     payload = {
@@ -131,35 +138,21 @@ def get_ticket_thread(ticket_id):
         return {}
 
 def store_ticket_thread(ticket_id, thread_data):
+    ensure_ticket_table_exists()
     conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
     cursor = conn.cursor()
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS ticket_threads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id TEXT,
-            sender TEXT,
-            content TEXT,
-            time TEXT,
-            UNIQUE(ticket_id, time)
-        )
-    ''')
-
     values = []
     for item in thread_data.get("data", []):
         sender = item.get("fromEmail") or item.get("sender") or "unknown"
         content = html.unescape(item.get("content") or "").strip()
         timestamp = item.get("createdTime") or datetime.utcnow().isoformat()
         values.append((ticket_id, sender, content, timestamp))
-
     cursor.executemany(
         "INSERT OR IGNORE INTO ticket_threads (ticket_id, sender, content, time) VALUES (?, ?, ?, ?)",
         values
     )
-
     conn.commit()
     conn.close()
-
     try:
         access_token = get_dropbox_access_token()
         with open(TEMP_LOCAL_DB_PATH, "rb") as f:
@@ -182,14 +175,11 @@ async def update_ticket(req: Request):
         ticket_id = body.get("ticketId")
         if not ticket_id or not ticket_id.strip().isalnum():
             raise HTTPException(status_code=400, detail="Invalid ticketId format")
-
         thread = get_ticket_thread(ticket_id)
         if not thread.get("data"):
             raise HTTPException(status_code=404, detail="No conversations found for ticket")
-
         store_ticket_thread(ticket_id, thread)
         return {"status": "Ticket thread saved", "ticketId": ticket_id}
-
     except Exception as e:
         logger.error(f"❌ Exception in /update_ticket: {e}")
         raise HTTPException(status_code=500, detail="Failed in update_ticket")
@@ -202,52 +192,45 @@ def inspect_ticket(ticket_id: str):
         cursor.execute("SELECT sender, content, time FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (ticket_id,))
         rows = cursor.fetchall()
         conn.close()
-
         if not rows:
             raise HTTPException(status_code=404, detail="No data found for this ticket")
-
         return [{"sender": row[0], "content": row[1], "time": row[2]} for row in rows]
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/answer")
-def answer_ticket(req: AnswerRequest):
+async def answer_question(req: AnswerRequest):
     try:
+        ensure_ticket_table_exists()
         conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT sender, content, time FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (req.ticketId,))
+        cursor.execute("SELECT content FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (req.ticketId,))
         rows = cursor.fetchall()
         conn.close()
 
-        history = "\n".join([f"{row[0]}: {row[1]}" for row in rows])
+        if not rows:
+            raise HTTPException(status_code=404, detail="No prior messages found for this ticket")
 
-        prompt = f"""
-You are a helpful and precise dental support assistant.
-You are responding on behalf of the same person who has replied earlier in this thread.
-
-Previous conversation:
-{history}
-
-New customer message:
-{req.question}
-
-What is the best possible reply?
-Please write only the message to the customer, not an explanation.
-"""
-
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500
+        history = "\n\n".join(row[0] for row in rows)
+        prompt = f"Ticket history:\n{history}\n\nQuestion:\n{req.question}\n\nAnswer as a helpful AlignerService assistant:"
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if not openai_key:
+            raise HTTPException(status_code=500, detail="Missing OpenAI API key")
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {openai_key}"},
+            json={
+                "model": "gpt-4",
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant specialized in clear aligners."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.5
+            }
         )
-
-        answer = response.choices[0].message.content.strip()
-        return {"answer": answer, "ticketId": req.ticketId}
-
+        response.raise_for_status()
+        data = response.json()
+        return {"answer": data["choices"][0]["message"]["content"]}
     except Exception as e:
         logger.error(f"❌ Exception in /answer: {e}")
         raise HTTPException(status_code=500, detail="Failed in /answer")
