@@ -78,6 +78,7 @@ def get_valid_access_token():
     }
     try:
         response = requests.post(TOKEN_URL, data=payload, timeout=10)
+        logger.info(f"🔍 RAW RESPONSE TEXT: {response.text}")
         response.raise_for_status()
         token_data = response.json()
         logger.info(f"🔍 TOKEN RESPONSE: {token_data}")
