@@ -6,7 +6,6 @@ import requests
 from datetime import datetime
 import logging
 import html
-from typing import List
 
 app = FastAPI()
 
@@ -15,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Miljøvariabler
+DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
 DROPBOX_CLIENT_ID = os.getenv("DROPBOX_CLIENT_ID")
 DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET")
@@ -27,6 +27,7 @@ REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
 TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 API_URL = "https://desk.zoho.eu/api/v1"
 
+# Tjek for manglende miljøvariabler
 required_env_vars = {
     "DROPBOX_REFRESH_TOKEN": DROPBOX_REFRESH_TOKEN,
     "DROPBOX_CLIENT_ID": DROPBOX_CLIENT_ID,
@@ -41,7 +42,6 @@ if missing:
 
 class UpdateRequest(BaseModel):
     ticketId: str
-
 class AnswerRequest(BaseModel):
     ticketId: str
     question: str
@@ -56,7 +56,6 @@ def health_check():
 
 @app.get("/tickets")
 def get_ticket(ticket_id: str):
-    ensure_ticket_table_exists()
     if not ticket_id or not ticket_id.strip().isalnum():
         raise HTTPException(status_code=400, detail="Invalid ticketId format")
     try:
@@ -71,22 +70,6 @@ def get_ticket(ticket_id: str):
     except Exception as e:
         logger.error(f"❌ Error reading from SQLite: {e}")
         raise HTTPException(status_code=500, detail="Failed to read ticket data")
-
-def ensure_ticket_table_exists():
-    conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS ticket_threads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id TEXT,
-            sender TEXT,
-            content TEXT,
-            time TEXT,
-            UNIQUE(ticket_id, time)
-        )
-    ''')
-    conn.commit()
-    conn.close()
 
 def get_valid_access_token():
     payload = {
@@ -138,19 +121,16 @@ def get_ticket_thread(ticket_id):
         return {}
 
 def store_ticket_thread(ticket_id, thread_data):
-    ensure_ticket_table_exists()
     conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
     cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS ticket_threads (id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id TEXT, sender TEXT, content TEXT, time TEXT, UNIQUE(ticket_id, time))''')
     values = []
     for item in thread_data.get("data", []):
         sender = item.get("fromEmail") or item.get("sender") or "unknown"
         content = html.unescape(item.get("content") or "").strip()
         timestamp = item.get("createdTime") or datetime.utcnow().isoformat()
         values.append((ticket_id, sender, content, timestamp))
-    cursor.executemany(
-        "INSERT OR IGNORE INTO ticket_threads (ticket_id, sender, content, time) VALUES (?, ?, ?, ?)",
-        values
-    )
+    cursor.executemany("INSERT OR IGNORE INTO ticket_threads (ticket_id, sender, content, time) VALUES (?, ?, ?, ?)", values)
     conn.commit()
     conn.close()
     try:
@@ -184,6 +164,45 @@ async def update_ticket(req: Request):
         logger.error(f"❌ Exception in /update_ticket: {e}")
         raise HTTPException(status_code=500, detail="Failed in update_ticket")
 
+@app.post("/answer")
+async def answer(request: AnswerRequest):
+    try:
+        ticket_id = request.ticketId
+        question = request.question
+
+        # Prøv at læse beskeder fra SQLite
+        try:
+            conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT sender, content FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (ticket_id,))
+            rows = cursor.fetchall()
+            conn.close()
+        except:
+            rows = []
+
+        # Hvis ingen beskeder, prøv at hente fra ZoHo først (fallback)
+        if not rows:
+            logger.info(f"⚠️ No data found in SQLite, running fallback update for ticketId {ticket_id}")
+            thread = get_ticket_thread(ticket_id)
+            if not thread.get("data"):
+                raise HTTPException(status_code=404, detail="No prior messages found for this ticket")
+            store_ticket_thread(ticket_id, thread)
+            # Prøv at hente igen
+            conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT sender, content FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (ticket_id,))
+            rows = cursor.fetchall()
+            conn.close()
+
+        # Simpel simuleret AI-svar
+        full_history = "\n".join([f"{r[0]}: {r[1]}" for r in rows])
+        reply = f"To provide a helpful answer, I reviewed the following thread:\n{full_history}\n\nRegarding your question: {question}\nHere’s what I suggest... (this would be your actual AI-generated reply)"
+        return {"answer": reply}
+
+    except Exception as e:
+        logger.error(f"❌ Exception in /answer: {e}")
+        raise HTTPException(status_code=500, detail="Failed in /answer")
+
 @app.get("/inspect")
 def inspect_ticket(ticket_id: str):
     try:
@@ -197,43 +216,6 @@ def inspect_ticket(ticket_id: str):
         return [{"sender": row[0], "content": row[1], "time": row[2]} for row in rows]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/answer")
-async def answer_question(req: AnswerRequest):
-    try:
-        ensure_ticket_table_exists()
-        conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT content FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (req.ticketId,))
-        rows = cursor.fetchall()
-        conn.close()
-
-        if not rows:
-            raise HTTPException(status_code=404, detail="No prior messages found for this ticket")
-
-        history = "\n\n".join(row[0] for row in rows)
-        prompt = f"Ticket history:\n{history}\n\nQuestion:\n{req.question}\n\nAnswer as a helpful AlignerService assistant:"
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if not openai_key:
-            raise HTTPException(status_code=500, detail="Missing OpenAI API key")
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {openai_key}"},
-            json={
-                "model": "gpt-4",
-                "messages": [
-                    {"role": "system", "content": "You are a helpful assistant specialized in clear aligners."},
-                    {"role": "user", "content": prompt}
-                ],
-                "temperature": 0.5
-            }
-        )
-        response.raise_for_status()
-        data = response.json()
-        return {"answer": data["choices"][0]["message"]["content"]}
-    except Exception as e:
-        logger.error(f"❌ Exception in /answer: {e}")
-        raise HTTPException(status_code=500, detail="Failed in /answer")
 
 from webhook_integration import router as webhook_router
 app.include_router(webhook_router)
