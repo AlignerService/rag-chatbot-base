@@ -185,6 +185,22 @@ async def update_ticket(req: Request):
         logger.error(f"❌ Exception in /update_ticket: {e}")
         raise HTTPException(status_code=500, detail="Failed in update_ticket")
 
-# Webhook fra anden fil (hvis du bruger webhook_integration.py)
+@app.get("/inspect")
+def inspect_ticket(ticket_id: str):
+    try:
+        conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT sender, content, time FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (ticket_id,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            raise HTTPException(status_code=404, detail="No data found for this ticket")
+
+        return [{"sender": row[0], "content": row[1], "time": row[2]} for row in rows]
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 from webhook_integration import router as webhook_router
 app.include_router(webhook_router)
