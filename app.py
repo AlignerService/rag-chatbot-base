@@ -80,6 +80,7 @@ def get_valid_access_token():
         response = requests.post(TOKEN_URL, data=payload, timeout=10)
         response.raise_for_status()
         token_data = response.json()
+        logger.info(f"🔍 TOKEN RESPONSE: {token_data}")
         access_token = token_data.get("access_token")
         if not access_token:
             raise Exception("No access token in response")
@@ -157,6 +158,6 @@ async def update_ticket(req: Request):
         logger.error(f"❌ Exception in /update_ticket: {e}")
         raise HTTPException(status_code=500, detail="Failed in update_ticket")
 
-# Importér webhook route
+# Webhook fra anden fil (hvis du bruger webhook_integration.py)
 from webhook_integration import router as webhook_router
 app.include_router(webhook_router)
