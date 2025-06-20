@@ -9,6 +9,7 @@ import logging
 import html
 from fastapi.responses import HTMLResponse
 from webhook_integration import router as webhook_router
+from rag_answer import get_rag_answer
 
 app = FastAPI()
 app.include_router(webhook_router)
@@ -179,3 +180,13 @@ async def generate_answer(data: dict):
     question = data.get("question", "Please generate a reply")
     logger.info(f"🧠 Received request for answer — ticketId: {ticket_id}, question: {question}")
     return {"answer": f"AI-generated reply for ticket ID: {ticket_id}"}
+
+@app.post("/rag_answer")
+async def rag_answer(request: AnswerRequest):
+    try:
+        logger.info(f"🧠 Received RAG request — ticketId: {request.ticketId}, question: {request.question}")
+        answer = get_rag_answer(request.question)
+        return {"answer": answer}
+    except Exception as e:
+        logger.error(f"❌ Error in /rag_answer: {e}")
+        raise HTTPException(status_code=500, detail="RAG failed")
