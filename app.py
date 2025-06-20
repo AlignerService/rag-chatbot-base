@@ -217,5 +217,17 @@ def inspect_ticket(ticket_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+from fastapi.responses import HTMLResponse
+
+@app.get("/ui", response_class=HTMLResponse)
+async def serve_ui(ticketId: str = ""):
+    try:
+        with open("ui/index.html", "r", encoding="utf-8") as f:
+            html = f.read()
+        html = html.replace("{{TICKET_ID}}", ticketId)
+        return HTMLResponse(content=html)
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>❌ UI not found</h1>", status_code=404)
+
 from webhook_integration import router as webhook_router
 app.include_router(webhook_router)
