@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>AI Assistant</title>
+</head>
+<body>
+    <h2>AI Assistant</h2>
+    <p>Ticket ID: <strong id="ticketId">{{TICKET_ID}}</strong></p>
+    <textarea id="responseBox" rows="10" cols="100">Loading AI response...</textarea><br><br>
+    <button onclick="saveAndCopy()">Gem & Kopiér</button>
+    <div id="status"></div>
+
+    <script>
+        const ticketId = document.getElementById("ticketId").textContent;
+
+        async function fetchAnswer() {
+            const res = await fetch("/answer", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ticketId: ticketId, question: "Please generate a reply" })
+            });
+            const data = await res.json();
+            document.getElementById("responseBox").value = data.answer || "⚠️ No answer received.";
+        }
+
+        async function saveAndCopy() {
+            const edited = document.getElementById("responseBox").value;
+            const res = await fetch("/log_response", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ticketId: ticketId, finalAnswer: edited })
+            });
+            const result = await res.json();
+            document.getElementById("status").textContent = result.status || "✅ Saved.";
+        }
+
+        fetchAnswer();
+    </script>
+</body>
+</html>
