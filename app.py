@@ -172,3 +172,10 @@ async def serve_ui(ticketId: str = ""):
         return HTMLResponse(content=html)
     except FileNotFoundError:
         return HTMLResponse(content="<h1>❌ UI not found</h1>", status_code=404)
+
+@app.post("/answer")
+async def generate_answer(data: dict):
+    ticket_id = data.get("ticketId")
+    question = data.get("question", "Please generate a reply")
+    logger.info(f"🧠 Received request for answer — ticketId: {ticket_id}, question: {question}")
+    return {"answer": f"AI-generated reply for ticket ID: {ticket_id}"}
