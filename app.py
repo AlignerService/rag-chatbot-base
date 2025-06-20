@@ -74,6 +74,45 @@ def get_ticket(ticket_id: str):
         logger.error(f"❌ Error reading from SQLite: {e}")
         raise HTTPException(status_code=500, detail="Failed to read ticket data")
 
+@app.post("/answer")
+async def generate_answer(data: dict):
+    ticket_id = data.get("ticketId")
+    question = data.get("question", "Please generate a reply")
+    logger.info(f"🧠 Received request for answer — ticketId: {ticket_id}, question: {question}")
+    try:
+        rag_reply = get_rag_answer(question)
+        return {"answer": rag_reply or "⚠️ No answer generated."}
+    except Exception as e:
+        logger.error(f"❌ Error in generate_answer: {e}")
+        return {"answer": "⚠️ No answer received."}
+
+@app.post("/update_ticket")
+async def update_ticket(req: Request):
+    try:
+        body = await req.json()
+        logger.info(f"🔍 REQUEST BODY: {body}")
+        ticket_id = body.get("ticketId")
+        if not ticket_id or not ticket_id.strip().isalnum():
+            raise HTTPException(status_code=400, detail="Invalid ticketId format")
+        thread = get_ticket_thread(ticket_id)
+        if not thread.get("data"):
+            raise HTTPException(status_code=404, detail="No conversations found for ticket")
+        store_ticket_thread(ticket_id, thread)
+        return {"status": "Ticket thread saved", "ticketId": ticket_id}
+    except Exception as e:
+        logger.error(f"❌ Exception in /update_ticket: {e}")
+        raise HTTPException(status_code=500, detail="Failed in update_ticket")
+
+@app.get("/ui", response_class=HTMLResponse)
+async def serve_ui(ticketId: str = ""):
+    try:
+        with open("ui/index.html", "r", encoding="utf-8") as f:
+            html = f.read()
+        html = html.replace("{{TICKET_ID}}", ticketId)
+        return HTMLResponse(content=html)
+    except FileNotFoundError:
+        return HTMLResponse(content="<h1>❌ UI not found</h1>", status_code=404)
+
 def get_valid_access_token():
     payload = {
         "refresh_token": REFRESH_TOKEN,
@@ -122,7 +161,16 @@ def get_ticket_thread(ticket_id):
 def store_ticket_thread(ticket_id, thread_data):
     conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS ticket_threads (id INTEGER PRIMARY KEY AUTOINCREMENT, ticket_id TEXT, sender TEXT, content TEXT, time TEXT, UNIQUE(ticket_id, time))''')
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ticket_threads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id TEXT,
+            sender TEXT,
+            content TEXT,
+            time TEXT,
+            UNIQUE(ticket_id, time)
+        )
+    """)
     values = []
     for item in thread_data.get("data", []):
         sender = item.get("fromEmail") or item.get("sender") or "unknown"
@@ -146,47 +194,3 @@ def store_ticket_thread(ticket_id, thread_data):
         logger.info("✅ Uploaded SQLite DB to Dropbox")
     except Exception as e:
         logger.error(f"❌ Dropbox upload failed: {e}")
-
-@app.post("/update_ticket")
-async def update_ticket(req: Request):
-    try:
-        body = await req.json()
-        logger.info(f"🔍 REQUEST BODY: {body}")
-        ticket_id = body.get("ticketId")
-        if not ticket_id or not ticket_id.strip().isalnum():
-            raise HTTPException(status_code=400, detail="Invalid ticketId format")
-        thread = get_ticket_thread(ticket_id)
-        if not thread.get("data"):
-            raise HTTPException(status_code=404, detail="No conversations found for ticket")
-        store_ticket_thread(ticket_id, thread)
-        return {"status": "Ticket thread saved", "ticketId": ticket_id}
-    except Exception as e:
-        logger.error(f"❌ Exception in /update_ticket: {e}")
-        raise HTTPException(status_code=500, detail="Failed in update_ticket")
-
-@app.get("/ui", response_class=HTMLResponse)
-async def serve_ui(ticketId: str = ""):
-    try:
-        with open("ui/index.html", "r", encoding="utf-8") as f:
-            html = f.read()
-        html = html.replace("{{TICKET_ID}}", ticketId)
-        return HTMLResponse(content=html)
-    except FileNotFoundError:
-        return HTMLResponse(content="<h1>❌ UI not found</h1>", status_code=404)
-
-@app.post("/answer")
-async def generate_answer(data: dict):
-    ticket_id = data.get("ticketId")
-    question = data.get("question", "Please generate a reply")
-    logger.info(f"🧠 Received request for answer — ticketId: {ticket_id}, question: {question}")
-    return {"answer": f"AI-generated reply for ticket ID: {ticket_id}"}
-
-@app.post("/rag_answer")
-async def rag_answer(request: AnswerRequest):
-    try:
-        logger.info(f"🧠 Received RAG request — ticketId: {request.ticketId}, question: {request.question}")
-        answer = get_rag_answer(request.question)
-        return {"answer": answer}
-    except Exception as e:
-        logger.error(f"❌ Error in /rag_answer: {e}")
-        raise HTTPException(status_code=500, detail="RAG failed")
