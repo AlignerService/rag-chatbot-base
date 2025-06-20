@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 import sqlite3
@@ -6,14 +7,15 @@ import requests
 from datetime import datetime
 import logging
 import html
+from fastapi.responses import HTMLResponse
+from webhook_integration import router as webhook_router
 
 app = FastAPI()
+app.include_router(webhook_router)
 
-# Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Miljøvariabler
 DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
 DROPBOX_CLIENT_ID = os.getenv("DROPBOX_CLIENT_ID")
@@ -27,7 +29,6 @@ REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
 TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 API_URL = "https://desk.zoho.eu/api/v1"
 
-# Tjek for manglende miljøvariabler
 required_env_vars = {
     "DROPBOX_REFRESH_TOKEN": DROPBOX_REFRESH_TOKEN,
     "DROPBOX_CLIENT_ID": DROPBOX_CLIENT_ID,
@@ -42,6 +43,7 @@ if missing:
 
 class UpdateRequest(BaseModel):
     ticketId: str
+
 class AnswerRequest(BaseModel):
     ticketId: str
     question: str
@@ -84,10 +86,7 @@ def get_valid_access_token():
         response.raise_for_status()
         token_data = response.json()
         logger.info(f"🔍 TOKEN RESPONSE: {token_data}")
-        access_token = token_data.get("access_token")
-        if not access_token:
-            raise Exception("No access token in response")
-        return access_token
+        return token_data.get("access_token")
     except Exception as e:
         logger.error(f"❌ Error obtaining ZoHo token: {e}")
         raise HTTPException(status_code=500, detail="Failed to get ZoHo access token")
@@ -102,8 +101,7 @@ def get_dropbox_access_token():
     try:
         response = requests.post("https://api.dropbox.com/oauth2/token", data=payload, timeout=10)
         response.raise_for_status()
-        token_data = response.json()
-        return token_data["access_token"]
+        return response.json()["access_token"]
     except Exception as e:
         logger.error(f"❌ Failed to refresh Dropbox token: {e}")
         raise HTTPException(status_code=500, detail="Failed to refresh Dropbox token")
@@ -129,6 +127,7 @@ def store_ticket_thread(ticket_id, thread_data):
         sender = item.get("fromEmail") or item.get("sender") or "unknown"
         content = html.unescape(item.get("content") or "").strip()
         timestamp = item.get("createdTime") or datetime.utcnow().isoformat()
+        logger.info(f"🧾 Fetched item — sender: {sender}, content: {content[:100]}")
         values.append((ticket_id, sender, content, timestamp))
     cursor.executemany("INSERT OR IGNORE INTO ticket_threads (ticket_id, sender, content, time) VALUES (?, ?, ?, ?)", values)
     conn.commit()
@@ -164,61 +163,6 @@ async def update_ticket(req: Request):
         logger.error(f"❌ Exception in /update_ticket: {e}")
         raise HTTPException(status_code=500, detail="Failed in update_ticket")
 
-@app.post("/answer")
-async def answer(request: AnswerRequest):
-    try:
-        ticket_id = request.ticketId
-        question = request.question
-
-        # Prøv at læse beskeder fra SQLite
-        try:
-            conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT sender, content FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (ticket_id,))
-            rows = cursor.fetchall()
-            conn.close()
-        except:
-            rows = []
-
-        # Hvis ingen beskeder, prøv at hente fra ZoHo først (fallback)
-        if not rows:
-            logger.info(f"⚠️ No data found in SQLite, running fallback update for ticketId {ticket_id}")
-            thread = get_ticket_thread(ticket_id)
-            if not thread.get("data"):
-                raise HTTPException(status_code=404, detail="No prior messages found for this ticket")
-            store_ticket_thread(ticket_id, thread)
-            # Prøv at hente igen
-            conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT sender, content FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (ticket_id,))
-            rows = cursor.fetchall()
-            conn.close()
-
-        # Simpel simuleret AI-svar
-        full_history = "\n".join([f"{r[0]}: {r[1]}" for r in rows])
-        reply = f"To provide a helpful answer, I reviewed the following thread:\n{full_history}\n\nRegarding your question: {question}\nHere’s what I suggest... (this would be your actual AI-generated reply)"
-        return {"answer": reply}
-
-    except Exception as e:
-        logger.error(f"❌ Exception in /answer: {e}")
-        raise HTTPException(status_code=500, detail="Failed in /answer")
-
-@app.get("/inspect")
-def inspect_ticket(ticket_id: str):
-    try:
-        conn = sqlite3.connect(TEMP_LOCAL_DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT sender, content, time FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (ticket_id,))
-        rows = cursor.fetchall()
-        conn.close()
-        if not rows:
-            raise HTTPException(status_code=404, detail="No data found for this ticket")
-        return [{"sender": row[0], "content": row[1], "time": row[2]} for row in rows]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-from fastapi.responses import HTMLResponse
-
 @app.get("/ui", response_class=HTMLResponse)
 async def serve_ui(ticketId: str = ""):
     try:
@@ -228,6 +172,3 @@ async def serve_ui(ticketId: str = ""):
         return HTMLResponse(content=html)
     except FileNotFoundError:
         return HTMLResponse(content="<h1>❌ UI not found</h1>", status_code=404)
-
-from webhook_integration import router as webhook_router
-app.include_router(webhook_router)
