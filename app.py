@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 import openai
 import faiss
+import dropbox  # <-- Tilføjet Dropbox SDK import
 
 # Opsæt logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -17,7 +18,10 @@ app = FastAPI()
 
 # Miljøvariabler til konfiguration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DB_PATH = os.getenv("KNOWLEDGE_DB", "/Users/macpro/Dropbox/AlignerService/RAG:Database:aktiv/rag.sqlite3")
+DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN")
+DROPBOX_DB_PATH = os.getenv("DROPBOX_DB_PATH")
+LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH", "/tmp/rag.sqlite3")  # Default lokal sti i Render
+
 INDEX_FILE = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 METADATA_FILE = os.getenv("METADATA_FILE", "metadata.json")
 MODEL_NAME = os.getenv("OPENAI_MODEL", "gpt-4")
@@ -25,10 +29,27 @@ TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", 0.2))
 
 openai.api_key = OPENAI_API_KEY
 
+def download_db_from_dropbox():
+    if not DROPBOX_ACCESS_TOKEN or not DROPBOX_DB_PATH:
+        logging.warning("Dropbox token or DB path not set, skipping Dropbox download.")
+        return
+
+    dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
+    try:
+        metadata, res = dbx.files_download(DROPBOX_DB_PATH)
+        with open(LOCAL_DB_PATH, "wb") as f:
+            f.write(res.content)
+        logging.info(f"Downloaded DB from Dropbox to {LOCAL_DB_PATH}")
+    except Exception as e:
+        logging.error(f"Error downloading DB from Dropbox: {e}")
+
+# Kald Dropbox-download inden init af DB
+download_db_from_dropbox()
+
 # Init database med tabel hvis ikke eksisterer
 def init_db():
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(LOCAL_DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS tickets (
@@ -85,8 +106,10 @@ def get_top_chunks(question: str, top_k: int = 5):
         return []
 
     try:
-        response = openai.Embedding.create(input=[question], model="text-embedding-ada-002")
-        query_vector = response["data"][0]["embedding"]
+        # Opdateret OpenAI embedding-kald til ny SDK-syntaks
+        client = openai.OpenAI()
+        response = client.embeddings.create(input=[question], model="text-embedding-ada-002")
+        query_vector = response.data[0].embedding
     except Exception as e:
         logging.error(f"OpenAI embedding error: {e}")
         return []
@@ -114,20 +137,21 @@ def generate_answer(question: str, context_chunks: list):
     )
 
     try:
-        response = openai.ChatCompletion.create(
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             temperature=TEMPERATURE,
             max_tokens=300,
         )
-        return response["choices"][0]["message"]["content"].strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         logging.error(f"OpenAI chat completion error: {e}")
         return f"Der opstod en fejl ved generering af svar: {e}"
 
 def save_to_db(ticket_id, question, answer_text):
     try:
-        with sqlite3.connect(DB_PATH) as conn:
+        with sqlite3.connect(LOCAL_DB_PATH) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT INTO tickets (ticket_id, question, answer, source)
