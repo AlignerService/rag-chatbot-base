@@ -185,6 +185,8 @@ def init_db():
         logger.error(f"Failed to initialize DB: {e}")
         raise
 
+init_db()
+
 # --- Load FAISS and metadata ---
 try:
     index = faiss.read_index(INDEX_FILE)
@@ -210,7 +212,7 @@ tokenizer = tiktoken.get_encoding("cl100k_base")
 
 # --- Request models ---
 class AnswerRequest(BaseModel):
-    ticketId: str = Field(..., max_length=100, regex=r'^[a-zA-Z0-9_-]+$')
+    ticketId: str = Field(..., max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')  # <-- rettet her
     question: str = Field(..., max_length=2000)
 
     @validator("question")
