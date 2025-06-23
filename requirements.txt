@@ -6,3 +6,4 @@ tiktoken
 dropbox
 faiss-cpu==1.7.4
 numpy<2
+aiohttp
