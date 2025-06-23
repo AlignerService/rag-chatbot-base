@@ -12,7 +12,6 @@ import faiss
 import dropbox
 import requests
 import time
-import threading
 import html
 from datetime import datetime
 import aiohttp
@@ -143,7 +142,7 @@ class DropboxSyncManager:
 
 sync_manager = DropboxSyncManager()
 
-# --- Download DB from Dropbox at startup ---
+# --- Download DB from Dropbox ---
 async def download_db_from_dropbox_async():
     try:
         dbx = await get_dropbox_client_async()
@@ -154,8 +153,6 @@ async def download_db_from_dropbox_async():
     except Exception as e:
         logger.error(f"Failed to download DB from Dropbox: {e}")
         raise RuntimeError("Failed to download DB from Dropbox")
-
-asyncio.run(download_db_from_dropbox_async())
 
 # --- Init SQLite DB schema ---
 def init_db():
@@ -187,8 +184,6 @@ def init_db():
     except Exception as e:
         logger.error(f"Failed to initialize DB: {e}")
         raise
-
-init_db()
 
 # --- Load FAISS and metadata ---
 try:
@@ -362,6 +357,7 @@ def read_root():
 
 @app.get("/health")
 async def health_check():
+    import aiosqlite
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
             await conn.execute("SELECT 1")
@@ -381,18 +377,15 @@ async def health_check():
 
 @app.get("/tickets")
 async def get_ticket(ticket_id: str):
+    import aiosqlite
     if not ticket_id or not ticket_id.strip().isalnum():
         raise HTTPException(status_code=400, detail="Invalid ticketId format")
-
-    import aiosqlite
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
             async with conn.execute("SELECT sender, content, time FROM ticket_threads WHERE ticket_id = ? ORDER BY time ASC", (ticket_id,)) as cursor:
                 rows = await cursor.fetchall()
-
         if not rows:
             raise HTTPException(status_code=404, detail="No data found for this ticket")
-
         return [{"sender": r[0], "content": r[1], "time": r[2]} for r in rows]
     except Exception as e:
         logger.error(f"Error reading ticket: {e}")
@@ -405,14 +398,11 @@ async def update_ticket(req: Request):
         ticket_id = body.get("ticketId")
         if not ticket_id or not ticket_id.strip().isalnum():
             raise HTTPException(status_code=400, detail="Invalid ticketId format")
-
         thread = await get_ticket_thread_async(ticket_id)
         if not thread.get("data"):
             raise HTTPException(status_code=404, detail="No conversations found for ticket")
-
         await store_ticket_thread_async(ticket_id, thread)
         return {"status": "Ticket thread saved", "ticketId": ticket_id}
-
     except Exception as e:
         logger.error(f"Exception in /update_ticket: {e}")
         raise HTTPException(status_code=500, detail="Failed in update_ticket")
@@ -420,12 +410,10 @@ async def update_ticket(req: Request):
 @app.post("/api/answer")
 async def api_answer(request: AnswerRequest):
     logger.info(f"Received AI question for ticketId {request.ticketId}")
-
     chunks = await asyncio.to_thread(get_top_chunks, request.question, top_k=5)
     answer = await generate_answer(request.question, chunks)
-
+    import aiosqlite
     try:
-        import aiosqlite
         async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
             await conn.execute('''
                 INSERT INTO tickets (ticket_id, question, answer, source)
@@ -437,7 +425,6 @@ async def api_answer(request: AnswerRequest):
     except Exception as e:
         logger.error(f"Failed saving AI answer: {e}")
         raise HTTPException(status_code=500, detail="Database error")
-
     return {"answer": answer}
 
 # --- Middleware: Timeout ---
@@ -451,7 +438,16 @@ async def timeout_middleware(request: Request, call_next):
 # --- Startup & Shutdown ---
 @app.on_event("startup")
 async def startup():
+    try:
+        await download_db_from_dropbox_async()
+        logger.info("Downloaded DB at startup successfully")
+    except Exception as e:
+        logger.error(f"Failed to download DB at startup: {e}")
+        # optionally raise here to stop the app if critical
+        # raise
+
     asyncio.create_task(sync_manager.upload_worker())
+
     try:
         await async_openai_client.embeddings.create(input=["test"], model=EMBEDDING_MODEL)
         logger.info("OpenAI connection validated")
@@ -463,4 +459,3 @@ async def startup():
 async def shutdown():
     await sync_manager.queue_upload()
     await asyncio.sleep(2)
-
