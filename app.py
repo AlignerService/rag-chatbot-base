@@ -20,7 +20,7 @@ import aiohttp
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Miljøvariabler ---
+# --- Settings / miljøvariabler ---
 required_env_vars = [
     "OPENAI_API_KEY", "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET",
     "DROPBOX_REFRESH_TOKEN", "DROPBOX_DB_PATH",
@@ -30,27 +30,23 @@ missing = [v for v in required_env_vars if not os.getenv(v)]
 if missing:
     raise RuntimeError(f"Missing required environment variables: {missing}")
 
-# OpenAI config
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")
 CHAT_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4")
 TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", 0.2))
 
-# Dropbox config
 DROPBOX_CLIENT_ID = os.getenv("DROPBOX_CLIENT_ID")
 DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
 DROPBOX_DB_PATH = os.getenv("DROPBOX_DB_PATH")
 LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 
-# Zoho config
 ZOHO_CLIENT_ID = os.getenv("ZOHO_CLIENT_ID")
 ZOHO_CLIENT_SECRET = os.getenv("ZOHO_CLIENT_SECRET")
 ZOHO_REFRESH_TOKEN = os.getenv("ZOHO_REFRESH_TOKEN")
 ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 ZOHO_API_URL = "https://desk.zoho.eu/api/v1"
 
-# FAISS + Metadata config
 INDEX_FILE = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 METADATA_FILE = os.getenv("METADATA_FILE", "metadata.json")
 
@@ -105,61 +101,62 @@ async def get_dropbox_client_async():
     token = await dropbox_token_manager.get_access_token()
     return dropbox.Dropbox(token)
 
-# --- DropboxSyncManager with async queue and lock ---
+# --- DropboxSyncManager med async upload-loop og task retention ---
 class DropboxSyncManager:
     def __init__(self):
-        self._upload_queue = asyncio.Queue()
+        self._upload_lock = asyncio.Lock()
         self._upload_in_progress = False
-        self._lock = asyncio.Lock()
+        self._upload_task = None
 
     async def queue_upload(self):
-        async with self._lock:
+        async with self._upload_lock:
             if not self._upload_in_progress:
                 self._upload_in_progress = True
-                await self._upload_queue.put(time.time())
+                if self._upload_task is None or self._upload_task.done():
+                    self._upload_task = asyncio.create_task(self._upload_to_dropbox_loop())
 
-    async def upload_worker(self):
-        while True:
-            await self._upload_queue.get()
-            try:
-                await self._upload_to_dropbox()
-            except Exception as e:
-                logger.error(f"Dropbox upload failed: {e}")
-            finally:
-                async with self._lock:
-                    self._upload_in_progress = False
-                self._upload_queue.task_done()
+    async def _upload_to_dropbox_loop(self):
+        try:
+            token = await dropbox_token_manager.get_access_token()
+            dbx = dropbox.Dropbox(token)
+            await asyncio.to_thread(self._sync_upload, dbx)
+            logger.info("Uploaded SQLite DB to Dropbox")
+        except Exception:
+            logger.exception("Dropbox upload failed")
+        finally:
+            async with self._upload_lock:
+                self._upload_in_progress = False
 
-    async def _upload_to_dropbox(self):
-        await asyncio.to_thread(self._sync_upload)
-
-    def _sync_upload(self):
-        # Synchronous upload - run in thread
-        dbx = dropbox.Dropbox(dropbox_token_manager.access_token)
+    def _sync_upload(self, dbx):
         with open(LOCAL_DB_PATH, "rb") as f:
             dbx.files_upload(f.read(), DROPBOX_DB_PATH, mode=dropbox.files.WriteMode.overwrite)
-        logger.info("Uploaded SQLite DB to Dropbox")
 
 sync_manager = DropboxSyncManager()
 
-# --- Download DB from Dropbox ---
+# --- Hjælpefunktion til at skrive fil (bruges i async download) ---
+def write_file(path, content):
+    with open(path, "wb") as f:
+        f.write(content)
+
+# --- Download DB fra Dropbox asynkront ---
 async def download_db_from_dropbox_async():
     try:
-        dbx = await get_dropbox_client_async()
-        metadata, res = dbx.files_download(DROPBOX_DB_PATH)
-        with open(LOCAL_DB_PATH, "wb") as f:
-            f.write(res.content)
+        token = await dropbox_token_manager.get_access_token()
+        dbx = dropbox.Dropbox(token)
+        # Brug andet navn for at undgå skygge af global metadata
+        db_meta, res = await asyncio.to_thread(dbx.files_download, DROPBOX_DB_PATH)
+        await asyncio.to_thread(write_file, LOCAL_DB_PATH, res.content)
         logger.info(f"Downloaded DB from Dropbox to {LOCAL_DB_PATH}")
-    except Exception as e:
-        logger.error(f"Failed to download DB from Dropbox: {e}")
+    except Exception:
+        logger.exception("Failed to download DB from Dropbox")
         raise RuntimeError("Failed to download DB from Dropbox")
 
-# --- Init SQLite DB schema ---
-def init_db():
+# --- Init DB ---
+async def init_db():
+    import aiosqlite
     try:
-        with sqlite3.connect(LOCAL_DB_PATH) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+        async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
+            await conn.execute('''
                 CREATE TABLE IF NOT EXISTS tickets (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ticket_id TEXT,
@@ -169,7 +166,7 @@ def init_db():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            cursor.execute('''
+            await conn.execute('''
                 CREATE TABLE IF NOT EXISTS ticket_threads (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ticket_id TEXT,
@@ -179,40 +176,43 @@ def init_db():
                     UNIQUE(ticket_id, time)
                 )
             ''')
-            conn.commit()
+            await conn.commit()
             logger.info("SQLite DB initialized")
-    except Exception as e:
-        logger.error(f"Failed to initialize DB: {e}")
+    except Exception:
+        logger.exception("Failed to initialize DB")
         raise
 
-init_db()
+# --- Load FAISS og metadata asynkront ---
+async def load_faiss_and_metadata():
+    global index, metadata
+    try:
+        index = await asyncio.to_thread(faiss.read_index, INDEX_FILE)
+        expected_dim = 1536
+        if index.d != expected_dim:
+            raise RuntimeError(f"FAISS index dimension mismatch: expected {expected_dim}, got {index.d}")
+        logger.info(f"FAISS index loaded from {INDEX_FILE}")
+    except Exception:
+        logger.exception("Failed to load FAISS index")
+        raise
 
-# --- Load FAISS and metadata ---
-try:
-    index = faiss.read_index(INDEX_FILE)
-    expected_dim = 1536
-    if index.d != expected_dim:
-        raise RuntimeError(f"FAISS index dimension mismatch: expected {expected_dim}, got {index.d}")
-    logger.info(f"FAISS index loaded from {INDEX_FILE}")
-except Exception as e:
-    logger.error(f"Failed to load FAISS index: {e}")
-    raise
+    try:
+        def read_metadata():
+            with open(METADATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
 
-try:
-    with open(METADATA_FILE, "r", encoding="utf-8") as f:
-        metadata = json.load(f)
-    if len(metadata) != index.ntotal:
-        logger.warning(f"Metadata length {len(metadata)} != FAISS index entries {index.ntotal}")
-    logger.info(f"Metadata loaded from {METADATA_FILE}")
-except Exception as e:
-    logger.error(f"Failed to load metadata: {e}")
-    raise
+        metadata = await asyncio.to_thread(read_metadata)
+        if len(metadata) != index.ntotal:
+            logger.warning(f"Metadata length {len(metadata)} != FAISS index entries {index.ntotal}")
+        logger.info(f"Metadata loaded from {METADATA_FILE}")
+    except Exception:
+        logger.exception("Failed to load metadata")
+        raise
 
 tokenizer = tiktoken.get_encoding("cl100k_base")
 
-# --- Request models ---
+# --- Request modeller ---
 class AnswerRequest(BaseModel):
-    ticketId: str = Field(..., max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')  # <-- rettet her
+    ticketId: str = Field(..., max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')
     question: str = Field(..., max_length=2000)
 
     @validator("question")
@@ -223,9 +223,9 @@ class AnswerRequest(BaseModel):
         return v
 
 class UpdateRequest(BaseModel):
-    ticketId: str
+    ticketId: str = Field(..., max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')
 
-# --- Helper functions for RAG ---
+# --- Hjælpefunktioner for RAG ---
 def trim_context(chunks, max_tokens=6000):
     tokens_used = 0
     trimmed = []
@@ -239,25 +239,24 @@ def trim_context(chunks, max_tokens=6000):
         tokens_used += chunk_tokens
     return trimmed
 
-def get_top_chunks(question: str, top_k: int = 5):
+async def get_embedding_async(text):
+    resp = await async_openai_client.embeddings.create(input=[text], model=EMBEDDING_MODEL)
+    return resp.data[0].embedding
+
+async def get_top_chunks(question: str, top_k: int = 5):
+    global index, metadata
     if index is None or not metadata:
         logger.warning("Index or metadata not loaded")
         return []
 
     try:
-        response = openai.ChatCompletion.create(
-            model=EMBEDDING_MODEL,
-            messages=[{"role": "user", "content": question}]
-        )
-        if not response.data or len(response.data) == 0:
-            logger.error("Empty OpenAI embedding response")
-            return []
-        query_vector = response.data[0].embedding
-    except Exception as e:
-        logger.error(f"OpenAI embedding error: {e}")
+        query_vector = await get_embedding_async(question)
+    except Exception:
+        logger.exception("OpenAI embedding error")
         return []
 
-    D, I = index.search(np.array([query_vector]).astype('float32'), top_k)
+    # FAISS search kan være CPU-bindende, kør i thread
+    D, I = await asyncio.to_thread(index.search, np.array([query_vector]).astype('float32'), top_k)
     results = []
     for idx in I[0]:
         if idx < len(metadata):
@@ -288,12 +287,12 @@ async def generate_answer(question: str, context_chunks: list):
             max_tokens=300,
         )
         return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error(f"OpenAI chat completion error: {e}")
-        return f"Der opstod en fejl ved generering af svar: {e}"
+    except Exception:
+        logger.exception("OpenAI chat completion error")
+        return "Der opstod en fejl ved generering af svar."
 
 # --- Zoho token refresh ---
-def get_zoho_access_token():
+async def get_zoho_access_token_async():
     payload = {
         "refresh_token": ZOHO_REFRESH_TOKEN,
         "client_id": ZOHO_CLIENT_ID,
@@ -301,20 +300,21 @@ def get_zoho_access_token():
         "grant_type": "refresh_token"
     }
     try:
-        resp = requests.post(ZOHO_TOKEN_URL, data=payload, timeout=10)
-        resp.raise_for_status()
-        token_data = resp.json()
-        access_token = token_data.get("access_token")
-        if not access_token:
-            raise Exception("No access token in Zoho response")
-        return access_token
-    except Exception as e:
-        logger.error(f"Zoho token refresh error: {e}")
+        async with aiohttp.ClientSession() as session:
+            async with session.post(ZOHO_TOKEN_URL, data=payload, timeout=10) as resp:
+                resp.raise_for_status()
+                token_data = await resp.json()
+                access_token = token_data.get("access_token")
+                if not access_token:
+                    raise RuntimeError("No access token in Zoho response")
+                return access_token
+    except Exception:
+        logger.exception("Zoho token refresh error")
         raise HTTPException(status_code=500, detail="Failed to refresh Zoho token")
 
 # --- Zoho API calls and DB sync ---
 async def get_ticket_thread_async(ticket_id):
-    token = get_zoho_access_token()
+    token = await get_zoho_access_token_async()
     headers = {"Authorization": f"Zoho-oauthtoken {token}"}
     url = f"{ZOHO_API_URL}/tickets/{ticket_id}/conversations"
     try:
@@ -322,8 +322,8 @@ async def get_ticket_thread_async(ticket_id):
             async with session.get(url, headers=headers, timeout=10) as resp:
                 resp.raise_for_status()
                 return await resp.json()
-    except Exception as e:
-        logger.error(f"Zoho API error getting ticket thread: {e}")
+    except Exception:
+        logger.exception("Zoho API error getting ticket thread")
         return {}
 
 async def store_ticket_thread_async(ticket_id, thread_data):
@@ -345,11 +345,15 @@ async def store_ticket_thread_async(ticket_id, thread_data):
             content = html.unescape(item.get("content") or "").strip()[:10000]
             timestamp = item.get("createdTime") or datetime.utcnow().isoformat()
             values.append((ticket_id, sender, content, timestamp))
-        await conn.executemany(
-            "INSERT OR IGNORE INTO ticket_threads (ticket_id, sender, content, time) VALUES (?, ?, ?, ?)",
-            values
-        )
-        await conn.commit()
+        try:
+            await conn.executemany(
+                "INSERT OR IGNORE INTO ticket_threads (ticket_id, sender, content, time) VALUES (?, ?, ?, ?)",
+                values
+            )
+            await conn.commit()
+        except Exception:
+            logger.exception("Failed to insert ticket threads")
+            raise
     await sync_manager.queue_upload()
 
 # --- REST endpoints ---
@@ -363,8 +367,8 @@ async def health_check():
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
             await conn.execute("SELECT 1")
-    except Exception as e:
-        logger.error(f"Health check DB error: {e}")
+    except Exception:
+        logger.exception("Health check DB error")
         return {"status": "error", "detail": "DB access failed"}
 
     if not index:
@@ -380,7 +384,7 @@ async def health_check():
 @app.get("/tickets")
 async def get_ticket(ticket_id: str):
     import aiosqlite
-    if not ticket_id or not ticket_id.strip().isalnum():
+    if not ticket_id or not ticket_id.strip():
         raise HTTPException(status_code=400, detail="Invalid ticketId format")
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
@@ -389,31 +393,30 @@ async def get_ticket(ticket_id: str):
         if not rows:
             raise HTTPException(status_code=404, detail="No data found for this ticket")
         return [{"sender": r[0], "content": r[1], "time": r[2]} for r in rows]
-    except Exception as e:
-        logger.error(f"Error reading ticket: {e}")
+    except Exception:
+        logger.exception("Error reading ticket")
         raise HTTPException(status_code=500, detail="Failed to read ticket data")
 
 @app.post("/update_ticket")
-async def update_ticket(req: Request):
-    try:
-        body = await req.json()
-        ticket_id = body.get("ticketId")
-        if not ticket_id or not ticket_id.strip().isalnum():
-            raise HTTPException(status_code=400, detail="Invalid ticketId format")
-        thread = await get_ticket_thread_async(ticket_id)
-        if not thread.get("data"):
-            raise HTTPException(status_code=404, detail="No conversations found for ticket")
-        await store_ticket_thread_async(ticket_id, thread)
-        return {"status": "Ticket thread saved", "ticketId": ticket_id}
-    except Exception as e:
-        logger.error(f"Exception in /update_ticket: {e}")
-        raise HTTPException(status_code=500, detail="Failed in update_ticket")
+async def update_ticket(req: UpdateRequest):
+    ticket_id = req.ticketId
+    if not ticket_id or not ticket_id.strip():
+        raise HTTPException(status_code=400, detail="Invalid ticketId format")
+
+    thread = await get_ticket_thread_async(ticket_id)
+    if not thread.get("data"):
+        raise HTTPException(status_code=404, detail="No conversations found for ticket")
+
+    await store_ticket_thread_async(ticket_id, thread)
+    return {"status": "Ticket thread saved", "ticketId": ticket_id}
 
 @app.post("/api/answer")
 async def api_answer(request: AnswerRequest):
     logger.info(f"Received AI question for ticketId {request.ticketId}")
-    chunks = await asyncio.to_thread(get_top_chunks, request.question, top_k=5)
+
+    chunks = await get_top_chunks(request.question, top_k=5)
     answer = await generate_answer(request.question, chunks)
+
     import aiosqlite
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
@@ -424,9 +427,10 @@ async def api_answer(request: AnswerRequest):
             await conn.commit()
         await sync_manager.queue_upload()
         logger.info(f"Saved AI answer for ticket {request.ticketId}")
-    except Exception as e:
-        logger.error(f"Failed saving AI answer: {e}")
+    except Exception:
+        logger.exception("Failed saving AI answer")
         raise HTTPException(status_code=500, detail="Database error")
+
     return {"answer": answer}
 
 # --- Middleware: Timeout ---
@@ -442,22 +446,33 @@ async def timeout_middleware(request: Request, call_next):
 async def startup():
     try:
         await download_db_from_dropbox_async()
-        logger.info("Downloaded DB at startup successfully")
-    except Exception as e:
-        logger.error(f"Failed to download DB at startup: {e}")
-        # optionally raise here to stop the app if critical
-        # raise
+    except Exception:
+        logger.exception("Failed to download DB at startup")
 
-    asyncio.create_task(sync_manager.upload_worker())
+    await init_db()
+    await load_faiss_and_metadata()
+
+    # Start baggrunds-upload-task og gem reference
+    sync_manager._upload_task = asyncio.create_task(sync_manager._upload_to_dropbox_loop())
 
     try:
         await async_openai_client.embeddings.create(input=["test"], model=EMBEDDING_MODEL)
         logger.info("OpenAI connection validated")
-    except Exception as e:
-        logger.error(f"OpenAI connection failed: {e}")
+    except Exception:
+        logger.exception("OpenAI connection validation failed")
         raise
 
 @app.on_event("shutdown")
 async def shutdown():
+    if hasattr(sync_manager, "_upload_task") and sync_manager._upload_task:
+        sync_manager._upload_task.cancel()
+        try:
+            await sync_manager._upload_task
+        except asyncio.CancelledError:
+            logger.info("Upload worker task cancelled gracefully")
+
     await sync_manager.queue_upload()
     await asyncio.sleep(2)
+
+    # Close HTTP client properly
+    await async_openai_client._client.aclose()
