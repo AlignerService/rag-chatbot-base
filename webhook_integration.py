@@ -1,34 +1,77 @@
-from fastapi import APIRouter, HTTPException, Request
-import requests
-import sqlite3
-import os
-from datetime import datetime
+# app/webhook_integration.py
 
+from fastapi import APIRouter, HTTPException, Request
+import os
+import json
+import asyncio
+import aiosqlite
+import aiohttp
+from datetime import datetime
+from dotenv import load_dotenv
+
+# --- Load env & init Zoho token handling ---
+load_dotenv()
 router = APIRouter()
 
-DATABASE_PATH = os.getenv("DATABASE_PATH", "/Users/macpro/Dropbox/AlignerService/RAG:Database:aktiv/rag.sqlite3")
+DATABASE_PATH  = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
+ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
+ZOHO_API_URL   = "https://desk.zoho.eu/api/v1"
+TOKEN_CACHE    = os.getenv("ZOHO_TOKEN_CACHE", "token_cache.json")
+
+# --- Helper to load cached token ---
+async def load_cached_token():
+    try:
+        data = json.loads(open(TOKEN_CACHE).read())
+        if data.get("access_token") and data.get("expires_at") > datetime.utcnow().timestamp():
+            return data["access_token"]
+    except Exception:
+        pass
+    return None
+
+# --- Helper to refresh Zoho token ---
+async def refresh_zoho_token():
+    payload = {
+        "refresh_token": os.getenv("ZOHO_REFRESH_TOKEN"),
+        "client_id":     os.getenv("ZOHO_CLIENT_ID"),
+        "client_secret": os.getenv("ZOHO_CLIENT_SECRET"),
+        "grant_type":    "refresh_token"
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(ZOHO_TOKEN_URL, data=payload) as resp:
+            resp.raise_for_status()
+            token_data = await resp.json()
+    token_data["expires_at"] = datetime.utcnow().timestamp() + token_data.get("expires_in", 0) - 60
+    with open(TOKEN_CACHE, "w") as f:
+        json.dump(token_data, f)
+    return token_data["access_token"]
+
+# --- Obtain a valid Zoho token ---
+async def get_valid_zoho_token():
+    token = await load_cached_token()
+    if token:
+        return token
+    return await refresh_zoho_token()
 
 @router.post("/webhook")
 async def receive_ticket(req: Request):
-    try:
-        body = await req.json()
-        ticket_id = body.get("ticketId")
-        if not ticket_id:
-            raise HTTPException(status_code=400, detail="No ticketId provided")
+    body = await req.json()
+    ticket_id = body.get("ticketId")
+    if not ticket_id:
+        raise HTTPException(status_code=400, detail="No ticketId provided")
 
-        access_token = get_valid_zoho_token()
+    # Fetch conversation threads
+    access_token = await get_valid_zoho_token()
+    headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{ZOHO_API_URL}/tickets/{ticket_id}/conversations", headers=headers) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
-        zoho_url = f"https://desk.zoho.eu/api/v1/tickets/{ticket_id}/threads"
-        headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-        response = requests.get(zoho_url, headers=headers)
-        if response.status_code != 200:
-            raise HTTPException(status_code=500, detail="ZoHo API failed")
+    threads = data.get("data", [])
 
-        threads = response.json().get("data", [])
-        conn = sqlite3.connect(DATABASE_PATH)
-        cursor = conn.cursor()
-
-        cursor.execute('''
+    # Store threads in SQLite
+    async with aiosqlite.connect(DATABASE_PATH) as conn:
+        await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 ticket_id TEXT,
@@ -37,60 +80,14 @@ async def receive_ticket(req: Request):
                 created_time TEXT
             )
         ''')
+        for t in threads:
+            sender  = t.get("fromEmail") or t.get("sender") or "unknown"
+            content = t.get("content", "")
+            created = t.get("createdTime") or datetime.utcnow().isoformat()
+            await conn.execute(
+                "INSERT OR IGNORE INTO ticket_threads (ticket_id, sender, content, created_time) VALUES (?, ?, ?, ?)",
+                (ticket_id, sender, content, created)
+            )
+        await conn.commit()
 
-        for thread in threads:
-            cursor.execute("""
-                INSERT INTO ticket_threads (ticket_id, sender, content, created_time)
-                VALUES (?, ?, ?, ?)
-            """, (
-                ticket_id,
-                thread.get("from", {}).get("email", "unknown"),
-                thread.get("content", ""),
-                thread.get("createdTime", datetime.utcnow().isoformat())
-            ))
-
-        conn.commit()
-        conn.close()
-        return {"status": "ok", "ticket_id": ticket_id, "threads_stored": len(threads)}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-def get_valid_zoho_token():
-    import json
-
-    token_file = "token_cache.json"
-    with open(token_file, "r") as f:
-        tokens = json.load(f)
-
-    access_token = tokens.get("access_token")
-    expires_at = tokens.get("expires_at")
-    now = datetime.utcnow().timestamp()
-
-    if access_token and expires_at and now < expires_at:
-        return access_token
-
-    client_id = os.getenv("ZOHO_CLIENT_ID")
-    client_secret = os.getenv("ZOHO_CLIENT_SECRET")
-    refresh_token = os.getenv("ZOHO_REFRESH_TOKEN")
-
-    payload = {
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "refresh_token": refresh_token,
-        "grant_type": "refresh_token"
-    }
-
-    res = requests.post("https://accounts.zoho.eu/oauth/v2/token", params=payload)
-    new_data = res.json()
-    access_token = new_data["access_token"]
-    expires_in = int(new_data["expires_in"])
-
-    with open(token_file, "w") as f:
-        json.dump({
-            "access_token": access_token,
-            "expires_at": datetime.utcnow().timestamp() + expires_in - 60
-        }, f)
-
-    return access_token
+    return {"status": "ok", "ticket_id": ticket_id, "threads_stored": len(threads)}
