@@ -7,62 +7,73 @@
 <body>
     <h2>AI Assistant</h2>
 
-    <!-- Sørg for at din server-template renderer både TICKET_ID og CONTACT_ID -->
-    <p>Ticket ID:   <strong id="ticketId">{{TICKET_ID}}</strong></p>
-    <p>Contact ID:  <strong id="contactId">{{CONTACT_ID}}</strong></p>
+    <!-- Du skal sørge for at sætte disse to placeholders fra din backend/template -->
+    <p>Ticket ID: <strong id="ticketId">{{TICKET_ID}}</strong></p>
+    <p>Contact ID: <strong id="contactId">{{CONTACT_ID}}</strong></p>
 
-    <textarea id="responseBox" rows="10" cols="100">Loading AI response...</textarea>
-    <br><br>
+    <textarea id="responseBox" rows="10" cols="100">Loading AI response...</textarea><br><br>
     <button onclick="saveAndCopy()">Gem & Kopiér</button>
     <div id="status"></div>
 
     <script>
-        const ticketId  = document.getElementById("ticketId").textContent;
-        const contactId = document.getElementById("contactId").textContent;
+        const ticketId  = document.getElementById("ticketId").textContent.trim();
+        const contactId = document.getElementById("contactId").textContent.trim();
 
+        // Hent svar fra /answer – husk nu at sende contactId!
         async function fetchAnswer() {
-            try {
-                const res = await fetch("/answer", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        ticketId:  ticketId,
-                        contactId: contactId,
-                        question:  "Please generate a reply"
-                    })
-                });
-                if (!res.ok) {
-                    throw new Error(`Server svarede med status ${res.status}`);
-                }
-                const data = await res.json();
-                document.getElementById("responseBox").value = data.answer || "⚠️ No answer received.";
-            } catch (err) {
-                document.getElementById("responseBox").value = "❌ Fejl: " + err.message;
+            const payload = {
+                ticketId:  ticketId,
+                contactId: contactId,
+                question:  "Please generate a reply"
+            };
+
+            const res = await fetch("/answer", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                document.getElementById("responseBox").value =
+                    `⚠️ Fejl ${res.status}: ${await res.text()}`;
+                return;
             }
+
+            const data = await res.json();
+            document.getElementById("responseBox").value =
+                data.answer ?? "⚠️ No answer received.";
         }
 
+        // Gem det endelige svar tilbage på /update_ticket
         async function saveAndCopy() {
-            const finalAnswer = document.getElementById("responseBox").value;
-            try {
-                const res = await fetch("/update_ticket", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        ticketId:    ticketId,
-                        finalAnswer: finalAnswer
-                    })
-                });
-                if (!res.ok) {
-                    throw new Error(`Server svarede med status ${res.status}`);
-                }
-                const result = await res.json();
-                document.getElementById("status").textContent = result.status || "✅ Saved.";
-            } catch (err) {
-                document.getElementById("status").textContent = "❌ Fejl: " + err.message;
+            const edited = document.getElementById("responseBox").value;
+            const payload = {
+                ticketId:    ticketId,
+                finalAnswer: edited
+            };
+
+            const res = await fetch("/update_ticket", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                document.getElementById("status").textContent =
+                    `⚠️ Fejl ved gem: ${res.status}`;
+                return;
             }
+
+            const result = await res.json();
+            document.getElementById("status").textContent =
+                result.status ?? "✅ Saved.";
+            
+            // Kopiér automatisk til clipboard
+            navigator.clipboard.writeText(edited).then(() => {
+                console.log("Copied to clipboard");
+            });
         }
 
-        // Hent svar med det samme
         fetchAnswer();
     </script>
 </body>
