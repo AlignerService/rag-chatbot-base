@@ -277,19 +277,6 @@ async def api_answer(req: AnswerRequest):
     await sync_mgr.queue()
     return {"answer": answer}
 
-# --- Temporary debug endpoint ---
-@app.get("/debug/tables")
-async def debug_tables():
-    """
-    Return a JSON-list of all tables in the SQLite DB.
-    """
-    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        cursor = await conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table';"
-        )
-        rows = await cursor.fetchall()
-    return {"tables": [r[0] for r in rows]}
-
 # --- Startup & shutdown ---
 @app.on_event("startup")
 async def on_startup():
