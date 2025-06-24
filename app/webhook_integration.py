@@ -104,7 +104,7 @@ async def receive_ticket(req: Request):
         await conn.commit()
 
     # Trigger Dropbox sync to persist DB
-    from app.app_core import sync_mgr  # ensure we use the sync manager
+       from app import sync_mgr
     await sync_mgr.queue()
 
     return {"status": "ok", "ticketId": ticket_id, "threads_stored": len(threads)}
