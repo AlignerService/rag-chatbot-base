@@ -14,6 +14,7 @@ import aiohttp
 import aiosqlite
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 from openai import OpenAI, AsyncOpenAI, OpenAIError
 from dotenv import load_dotenv
@@ -132,9 +133,13 @@ class DropboxSyncManager:
     async def _upload(self):
         try:
             dbx = await get_dropbox_client()
-            # flyt fil-IO ud i en tråd
             data = await asyncio.to_thread(lambda: open(LOCAL_DB_PATH, 'rb').read())
-            await asyncio.to_thread(dbx.files_upload, data, DROPBOX_DB_PATH, mode=dropbox.files.WriteMode.overwrite)
+            await asyncio.to_thread(
+                dbx.files_upload,
+                data,
+                DROPBOX_DB_PATH,
+                mode=dropbox.files.WriteMode.overwrite
+            )
             logger.info("Uploaded DB to Dropbox")
         except Exception:
             logger.exception("Dropbox upload failed")
@@ -145,7 +150,6 @@ sync_mgr = DropboxSyncManager()
 async def download_db():
     try:
         dbx = await get_dropbox_client()
-        # hent fra Dropbox i en tråd
         md, res = await asyncio.to_thread(dbx.files_download, DROPBOX_DB_PATH)
         await asyncio.to_thread(lambda: open(LOCAL_DB_PATH, 'wb').write(res.content))
         logger.info("Downloaded DB from Dropbox")
@@ -167,7 +171,7 @@ async def init_db():
             );
         ''')
 
-        # 2) Opret ticket_threads uden created_time (migration tilføjer senere)
+        # 2) Opret ticket_threads (uden de migrerede kolonner)
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -178,15 +182,20 @@ async def init_db():
             );
         ''')
 
-        # 3) Migration: tilføj created_time hvis mangler
+        # 3) Migration: tilføj contact_id & created_time hvis mangler
         cursor = await conn.execute("PRAGMA table_info(ticket_threads);")
         cols = [row[1] for row in await cursor.fetchall()]
+
+        if 'contact_id' not in cols:
+            await conn.execute("ALTER TABLE ticket_threads ADD COLUMN contact_id TEXT;")
+            logger.info("Migrated ticket_threads: added contact_id column")
+
         if 'created_time' not in cols:
             await conn.execute("ALTER TABLE ticket_threads ADD COLUMN created_time TEXT;")
             logger.info("Migrated ticket_threads: added created_time column")
 
         await conn.commit()
-        logger.info("DB initialized (with migration)")
+        logger.info("DB initialized (with full migration)")
 
 # --- Lazy Load FAISS & metadata ---
 async def load_index_meta():
@@ -198,8 +207,6 @@ async def load_index_meta():
     except Exception as e:
         logger.exception("Failed to load FAISS index/metadata")
         raise RuntimeError("Index load failed") from e
-
-# --- API Search Helpers init (flyttet til on_startup) ---
 
 # --- Webhook routes (Zoho-token håndteres dér) ---
 from app.webhook_integration import router as webhook_router
@@ -223,11 +230,10 @@ class AnswerResponse(BaseModel):
 
 from app.api_search_helpers import init_db_path, get_ticket_history, get_customer_history
 
-# --- /api/answer endpoint med robust error‐handling ---
+# --- /api/answer endpoint ---
 @app.post("/api/answer", response_model=AnswerResponse)
 async def api_answer(req: AnswerRequest):
     global index, metadata
-    # Lazy‐load index/metadata
     if index is None or metadata is None:
         await load_index_meta()
 
@@ -236,13 +242,13 @@ async def api_answer(req: AnswerRequest):
     ticket_text = "\n".join(ticket_hist)
     count_and_log("TicketHistory", ticket_text)
 
-    # 2) Customer history (uden cirkulær afhængighed)
+    # 2) Customer history
     customer_hist = []
     if num_tokens(ticket_text) < 1000:
         customer_hist = await get_customer_history(req.contactId, exclude_ticket_id=req.ticketId)
     count_and_log("CustomerHistory", "\n".join(customer_hist))
 
-    # 3) RAG‐søgeproces
+    # 3) RAG-søgning
     emb = await async_client.embeddings.create(input=[req.question], model=EMBEDDING_MODEL)
     q_vec = np.array(emb.data[0].embedding, dtype=np.float32).reshape(1, -1)
     D, I = index.search(q_vec, 5)
@@ -259,7 +265,7 @@ async def api_answer(req: AnswerRequest):
         ctx.append(seg)
         used += tok
 
-    # 5) Byg OpenAI‐prompt
+    # 5) Byg prompt
     parts = ["Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver."]
     if ticket_hist:
         parts += ["Tidligere samtaler (dette ticket):"] + ticket_hist
@@ -269,7 +275,7 @@ async def api_answer(req: AnswerRequest):
     parts += [f"Spørgsmål: {req.question}", "Svar:"]
     prompt = "\n\n".join(parts)
 
-    # 6) Chat‐completion med error‐handling
+    # 6) Chat completion med error‐handling
     try:
         chat = await async_client.chat.completions.create(
             model=CHAT_MODEL,
@@ -282,7 +288,7 @@ async def api_answer(req: AnswerRequest):
         logger.exception("OpenAI‐kald fejlede")
         raise HTTPException(status_code=502, detail="OpenAI‐tjeneste fejlede. Prøv igen senere.") from e
 
-    # 7) Gem svar i DB
+    # 7) Gem svar
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
             "INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, 'RAG')",
@@ -292,6 +298,11 @@ async def api_answer(req: AnswerRequest):
     await sync_mgr.queue()
 
     return {"answer": answer}
+
+# --- Alias for UI på /answer ---
+@app.post("/answer", response_model=AnswerResponse)
+async def alias_answer(req: AnswerRequest = Body(...)):
+    return await api_answer(req)
 
 # --- /update_ticket endpoint ---
 class LogRequest(BaseModel):
@@ -313,9 +324,13 @@ async def update_ticket(log: LogRequest):
     await sync_mgr.queue()
     return {"status": "ok"}
 
-# --- Healthcheck/home ---
-@app.get("/")
-async def health():
+# --- Healthcheck & Render uptime-check på HEAD / og GET / ---
+@app.head("/", include_in_schema=False)
+async def health_head():
+    return JSONResponse(status_code=200, content=None)
+
+@app.get("/", include_in_schema=False)
+async def health_get():
     return {"status": "ok"}
 
 # --- Startup & shutdown ---
@@ -327,7 +342,7 @@ async def on_startup():
     await init_db()
     # 3) init api_search_helpers
     init_db_path(LOCAL_DB_PATH)
-    # 4) (optional) preload index/metadata to få fejl tidligt
+    # 4) (valgfrit) preload index/metadata for tidlig fejl
     try:
         await load_index_meta()
     except RuntimeError:
