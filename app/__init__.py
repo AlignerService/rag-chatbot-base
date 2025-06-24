@@ -26,10 +26,11 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Required env vars (only OpenAI + Dropbox here) ---
+# --- Required env vars ---
 required = [
     "OPENAI_API_KEY",
-    "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET", "DROPBOX_REFRESH_TOKEN", "DROPBOX_DB_PATH"
+    "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET", "DROPBOX_REFRESH_TOKEN", "DROPBOX_DB_PATH",
+    "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"
 ]
 missing = [v for v in required if not os.getenv(v)]
 if missing:
@@ -57,7 +58,7 @@ metadata = None
 # --- FastAPI app ---
 app = FastAPI()
 
-# --- CORS (så UI kan kalde fra hvor som helst) ---
+# --- CORS Middleware ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -145,19 +146,10 @@ class DropboxSyncManager:
 
 sync_mgr = DropboxSyncManager()
 
-# --- Database init & download with migration ---
-async def download_db():
-    try:
-        dbx = await get_dropbox_client()
-        md, res = await asyncio.to_thread(dbx.files_download, DROPBOX_DB_PATH)
-        await asyncio.to_thread(lambda: open(LOCAL_DB_PATH, 'wb').write(res.content))
-        logger.info("Downloaded DB from Dropbox")
-    except Exception:
-        logger.exception("Failed to download DB")
-
+# --- Database init, schema + migrations ---
 async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # Create tickets
+        # 1) Create tickets with full schema
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS tickets (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,7 +161,7 @@ async def init_db():
                 created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
-        # Create ticket_threads
+        # 2) Create ticket_threads with full schema
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,8 +173,39 @@ async def init_db():
                 UNIQUE(ticket_id, created_time)
             );
         ''')
+        # 3) Migrate ticket_threads
+        cursor = await conn.execute("PRAGMA table_info(ticket_threads);")
+        cols = {row[1] for row in await cursor.fetchall()}
+        if 'contact_id' not in cols:
+            await conn.execute("ALTER TABLE ticket_threads ADD COLUMN contact_id TEXT;")
+            logger.info("Migrated ticket_threads: added contact_id column")
+        if 'created_time' not in cols:
+            await conn.execute("ALTER TABLE ticket_threads ADD COLUMN created_time TEXT;")
+            logger.info("Migrated ticket_threads: added created_time column")
+        # 4) Migrate tickets
+        cursor = await conn.execute("PRAGMA table_info(tickets);")
+        cols = {row[1] for row in await cursor.fetchall()}
+        if 'contact_id' not in cols:
+            await conn.execute("ALTER TABLE tickets ADD COLUMN contact_id TEXT;")
+            logger.info("Migrated tickets: added contact_id column")
+        if 'source' not in cols:
+            await conn.execute("ALTER TABLE tickets ADD COLUMN source TEXT;")
+            logger.info("Migrated tickets: added source column")
+        if 'created_at' not in cols:
+            await conn.execute("ALTER TABLE tickets ADD COLUMN created_at TIMESTAMP;")
+            logger.info("Migrated tickets: added created_at column")
         await conn.commit()
-        logger.info("DB initialized (with full schema)")
+        logger.info("DB initialized (with full schema and migrations)")
+
+# --- Download DB from Dropbox ---
+async def download_db():
+    try:
+        dbx = await get_dropbox_client()
+        md, res = await asyncio.to_thread(dbx.files_download, DROPBOX_DB_PATH)
+        await asyncio.to_thread(lambda: open(LOCAL_DB_PATH, 'wb').write(res.content))
+        logger.info("Downloaded DB from Dropbox")
+    except Exception:
+        logger.exception("Failed to download DB")
 
 # --- Lazy Load FAISS & metadata ---
 async def load_index_meta():
@@ -195,7 +218,7 @@ async def load_index_meta():
         logger.exception("Failed to load FAISS index/metadata")
         raise RuntimeError("Index load failed") from e
 
-# --- Webhook routes (only imports sync_mgr & LOCAL_DB_PATH) ---
+# --- Include webhook routes ---
 from app.webhook_integration import router as webhook_router
 app.include_router(webhook_router)
 
@@ -209,13 +232,13 @@ class AnswerRequest(BaseModel):
     def nonempty(cls, v):
         v = v.strip()
         if not v:
-            raise ValueError('Question må ikke være tom')
+            raise ValueError('Question must not be empty')
         return html.escape(v)
 
 class AnswerResponse(BaseModel):
     answer: str
 
-# --- API Search Helpers init (in startup) ---
+# --- API Search Helpers init ---
 from app.api_search_helpers import init_db_path, get_ticket_history, get_customer_history
 
 # --- /api/answer endpoint ---
@@ -225,25 +248,24 @@ async def api_answer(req: AnswerRequest):
     if index is None or metadata is None:
         await load_index_meta()
 
-    # 1) Ticket history
+    # Ticket history
     ticket_hist = await get_ticket_history(req.ticketId)
-    ticket_text = "\n".join(ticket_hist)
-    count_and_log("TicketHistory", ticket_text)
+    count_and_log("TicketHistory", "\n".join(ticket_hist))
 
-    # 2) Customer history
+    # Customer history
     customer_hist = []
-    if num_tokens(ticket_text) < 1000:
+    if num_tokens("\n".join(ticket_hist)) < 1000:
         customer_hist = await get_customer_history(req.contactId, exclude_ticket_id=req.ticketId)
     count_and_log("CustomerHistory", "\n".join(customer_hist))
 
-    # 3) RAG search
+    # RAG search
     emb = await async_client.embeddings.create(input=[req.question], model=EMBEDDING_MODEL)
     q_vec = np.array(emb.data[0].embedding, dtype=np.float32).reshape(1, -1)
     D, I = index.search(q_vec, 5)
     rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
     count_and_log("RAGChunks", "\n---\n".join(rag_chunks))
 
-    # 4) Trim context
+    # Build context
     MAX_CTX = 3000
     used, ctx = 0, []
     for seg in ticket_hist + customer_hist + rag_chunks:
@@ -253,17 +275,17 @@ async def api_answer(req: AnswerRequest):
         ctx.append(seg)
         used += tok
 
-    # 5) Build prompt
-    parts = ["Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver."]
+    # Build prompt
+    parts = ["You are Dr. Helle Hatt from AlignerService, an experienced clinical advisor."]
     if ticket_hist:
-        parts += ["Tidligere samtaler (dette ticket):"] + ticket_hist
+        parts += ["Previous conversation (this ticket):"] + ticket_hist
     if customer_hist:
-        parts += ["Tidligere samtaler (andre tickets):"] + customer_hist
-    parts += ["Faglig kontekst:"] + rag_chunks
-    parts += [f"Spørgsmål: {req.question}", "Svar:"]
+        parts += ["Previous conversation (other tickets):"] + customer_hist
+    parts += ["Contextual knowledge:"] + rag_chunks
+    parts += [f"Question: {req.question}", "Answer:"]
     prompt = "\n\n".join(parts)
 
-    # 6) Chat completion w/ error handling
+    # Call OpenAI
     try:
         chat = await async_client.chat.completions.create(
             model=CHAT_MODEL,
@@ -273,10 +295,10 @@ async def api_answer(req: AnswerRequest):
         )
         answer = chat.choices[0].message.content.strip()
     except OpenAIError as e:
-        logger.exception("OpenAI‐kald fejlede")
-        raise HTTPException(status_code=502, detail="OpenAI‐tjeneste fejlede. Prøv igen senere.") from e
+        logger.exception("OpenAI call failed")
+        raise HTTPException(status_code=502, detail="OpenAI service error. Please try again later.") from e
 
-    # 7) Save to DB
+    # Store answer
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
             "INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, 'RAG')",
@@ -312,7 +334,7 @@ async def update_ticket(log: LogRequest):
     await sync_mgr.queue()
     return {"status": "ok"}
 
-# --- Healthcheck on HEAD/GET / ---
+# --- Healthcheck endpoints ---
 @app.head("/", include_in_schema=False)
 async def health_head():
     return JSONResponse(status_code=200, content=None)
@@ -321,7 +343,7 @@ async def health_head():
 async def health_get():
     return {"status": "ok"}
 
-# --- Startup & shutdown ---
+# --- Startup & shutdown events ---
 @app.on_event("startup")
 async def on_startup():
     await download_db()
