@@ -1,0 +1,37 @@
+name: Build FAISS Index
+
+on:
+  push:
+    branches: [ main ]    # eller dit primære branch-navn
+
+jobs:
+  build-index:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install faiss-cpu openai numpy python-dotenv
+
+      - name: Build FAISS index
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python build_index.py
+
+      - name: Upload index as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: faiss-index
+          path: |
+            faiss.index
+            id_mapping.csv
