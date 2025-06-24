@@ -56,7 +56,7 @@ TOKEN_CACHE_FILE     = os.getenv("ZOHO_TOKEN_CACHE", "token_cache.json")
 INDEX_FILE           = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 METADATA_FILE        = os.getenv("METADATA_FILE", "metadata.json")
 
-# --- Globals for FAISS/metadata ---
+# --- Globals for FAISS & metadata ---
 index = None
 metadata = None
 
@@ -152,28 +152,32 @@ async def download_db():
 
 async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
+        # Opret tickets‐tabellen
         await conn.execute('''
-        CREATE TABLE IF NOT EXISTS tickets (
-            id INTEGER PRIMARY KEY,
-            ticket_id TEXT,
-            contact_id TEXT,
-            question TEXT,
-            answer TEXT,
-            source TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );''')
+            CREATE TABLE IF NOT EXISTS tickets (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id    TEXT,
+                contact_id   TEXT,
+                question     TEXT,
+                answer       TEXT,
+                source       TEXT,
+                created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        ''')
+        # Opret ticket_threads‐tabellen
         await conn.execute('''
-        CREATE TABLE IF NOT EXISTS ticket_threads (
-            id INTEGER PRIMARY KEY,
-            ticket_id TEXT,
-            contact_id TEXT,
-            sender TEXT,
-            content TEXT,
-            created_time TEXT,
-            UNIQUE(ticket_id, created_time)
-        );''')
+            CREATE TABLE IF NOT EXISTS ticket_threads (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id     TEXT,
+                contact_id    TEXT,
+                sender        TEXT,
+                content       TEXT,
+                created_time  TEXT,
+                UNIQUE(ticket_id, created_time)
+            );
+        ''')
         await conn.commit()
-        logger.info("DB initialized")
+        logger.info("DB initialized: tickets & ticket_threads created")
 
 # --- Load FAISS & metadata ---
 async def load_index_meta():
@@ -224,8 +228,7 @@ async def api_answer(req: AnswerRequest):
     if num_tokens(ticket_text) < 1000:
         customer_hist = await get_customer_history(
             req.contactId, exclude_ticket_id=req.ticketId)
-    cust_text = "\n".join(customer_hist)
-    count_and_log("CustomerHistory", cust_text)
+    count_and_log("CustomerHistory", "\n".join(customer_hist))
 
     # RAG search
     emb = await async_client.embeddings.create(
@@ -236,12 +239,14 @@ async def api_answer(req: AnswerRequest):
     count_and_log("RAGChunks", "\n---\n".join(rag_chunks))
 
     # Assemble context
-    MAX_CTX = 3000; used = 0; ctx = []
+    MAX_CTX = 3000
+    used, ctx = 0, []
     for seg in ticket_hist + customer_hist + rag_chunks:
         tok = num_tokens(seg)
         if used + tok > MAX_CTX:
             break
-        ctx.append(seg); used += tok
+        ctx.append(seg)
+        used += tok
 
     # Build prompt
     parts = ["Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver."]
