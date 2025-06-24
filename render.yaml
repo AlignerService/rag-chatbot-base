@@ -4,7 +4,7 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+startCommand: uvicorn app.__init__:app --host 0.0.0.0 --port $PORT
     autoDeploy: true
     envVars:
       - key: DROPBOX_TOKEN
