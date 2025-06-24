@@ -2,31 +2,31 @@
 
 This is a minimal FastAPI server to test webhook integration with Zoho Desk or similar platforms.
 
-## Mappestruktur
+## Folder Structure
 
 ```bash
-/app         ← din FastAPI-app  
-/scripts     ← backup-scripts og index-byg  
-/ui          ← frontend-template  
-.github/...  ← CI  
-render.yaml  ← Render-konfig  
+/app         ← your FastAPI application
+/scripts     ← backup scripts and index build
+/ui          ← frontend template
+.github/...  ← CI configuration
+render.yaml  ← Render deployment configuration
 ```
 
-## Kom i gang lokalt
+## Getting Started Locally
 
-For at starte serveren lokalt skal du køre:
+To start the server locally, run:
 
 ```bash
 uvicorn app:app --reload
 ```
 
-Serveren vil herefter være tilgængelig på `http://127.0.0.1:8000` som standard.
+The server will be available at `http://127.0.0.1:8000` by default.
 
-## Render Settings
+## Deployment on Render
 
-Følgende indstillinger bruges til deployment på Render.com:
+Use the following settings for deployment on Render.com:
 
 * **Start Command:** `uvicorn app:app --host 0.0.0.0 --port 10000`
 * **Instance Type:** Starter (\$7/month)
 * **Auto Deploy:** On
-* **Root Directory:** (efterlades blank)
+* **Root Directory:** (leave blank)
