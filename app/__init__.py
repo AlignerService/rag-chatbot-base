@@ -12,7 +12,7 @@ import dropbox
 import tiktoken
 import aiohttp
 import aiosqlite
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Body
 from pydantic import BaseModel, Field, validator
 from openai import OpenAI, AsyncOpenAI
 from dotenv import load_dotenv
@@ -172,7 +172,7 @@ async def init_db():
         await conn.commit()
         logger.info("DB initialized: tickets & ticket_threads created")
 
-# --- Load FAISS & metadata (lazy) ---
+# --- Lazy Load FAISS & metadata ---
 async def load_index_meta():
     global index, metadata
     index = await asyncio.to_thread(faiss.read_index, INDEX_FILE)
@@ -208,7 +208,6 @@ from app.api_search_helpers import get_ticket_history, get_customer_history
 @app.post("/api/answer", response_model=AnswerResponse)
 async def api_answer(req: AnswerRequest):
     global index, metadata
-    # Lazy-load FAISS index & metadata if needed
     if index is None or metadata is None:
         await load_index_meta()
 
@@ -228,6 +227,7 @@ async def api_answer(req: AnswerRequest):
     emb = await async_client.embeddings.create(
         input=[req.question], model=EMBEDDING_MODEL)
     q_vec = np.array(emb.data[0].embedding, dtype=np.float32).reshape(1, -1)
+<textarea style="display:none">    
     D, I = index.search(q_vec, 5)
     rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
     count_and_log("RAGChunks", "\n---\n".join(rag_chunks))
@@ -270,11 +270,36 @@ async def api_answer(req: AnswerRequest):
         await conn.commit()
     await sync_mgr.queue()
     return {"answer": answer}
+</textarea>
+
+# --- Alias for /answer ---
+@app.post("/answer", response_model=AnswerResponse)
+async def alias_answer(req: AnswerRequest = Body(...)):
+    return await api_answer(req)
+
+# --- LogRequest model & /update_ticket endpoint ---
+class LogRequest(BaseModel):
+    ticketId:    str
+    finalAnswer: str
+
+@app.post("/update_ticket")
+async def update_ticket(log: LogRequest):
+    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
+        await conn.execute(
+            """
+            UPDATE tickets
+            SET answer = ?, source = 'FINAL', created_at = CURRENT_TIMESTAMP
+            WHERE ticket_id = ?
+            """,
+            (html.escape(log.finalAnswer), log.ticketId)
+        )
+        await conn.commit()
+    await sync_mgr.queue()
+    return {"status": "ok"}
 
 # --- Startup & shutdown ---
 @app.on_event("startup")
 async def on_startup():
-    # Kun download og DB-init; FAISS loades først når /api/answer kaldes
     await download_db()
     await init_db()
     logger.info("Startup complete")
