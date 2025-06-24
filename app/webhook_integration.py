@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 router = APIRouter()
 
+# Use the same LOCAL_DB_PATH as in app.py
 DATABASE_PATH  = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 ZOHO_API_URL   = "https://desk.zoho.eu/api/v1"
@@ -41,6 +42,7 @@ async def refresh_zoho_token():
         async with session.post(ZOHO_TOKEN_URL, data=payload) as resp:
             resp.raise_for_status()
             token_data = await resp.json()
+    # Compute expiry and cache
     token_data["expires_at"] = datetime.utcnow().timestamp() + token_data.get("expires_in", 0) - 60
     with open(TOKEN_CACHE, "w", encoding="utf-8") as f:
         json.dump(token_data, f)
@@ -55,43 +57,54 @@ async def get_valid_zoho_token():
 # --- Webhook endpoint ---
 @router.post("/webhook")
 async def receive_ticket(req: Request):
-    body = await req.json()
-    ticket_id  = body.get("ticketId")
-    contact_id = body.get("contactId")
+    """
+    Webhook handler for Zoho ticket updates.
+    Expects JSON body with 'ticketId' and 'contactId'.
+    Fetches conversations and stores them in SQLite.
+    """
+    payload    = await req.json()
+    ticket_id  = payload.get("ticketId")
+    contact_id = payload.get("contactId")
     if not ticket_id or not contact_id:
-        raise HTTPException(status_code=400, detail="Missing ticketId or contactId")
+        raise HTTPException(status_code=400, detail="Missing 'ticketId' or 'contactId'.")
 
     access_token = await get_valid_zoho_token()
     headers      = {"Authorization": f"Zoho-oauthtoken {access_token}"}
 
-    # Fetch ticket conversations
+    # Fetch conversations
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"{ZOHO_API_URL}/tickets/{ticket_id}/conversations", headers=headers) as resp:
+        url = f"{ZOHO_API_URL}/tickets/{ticket_id}/conversations"
+        async with session.get(url, headers=headers) as resp:
             resp.raise_for_status()
             data = await resp.json()
     threads = data.get("data", [])
 
-    # Store threads in SQLite with contact_id
+    # Store to SQLite
     async with aiosqlite.connect(DATABASE_PATH) as conn:
-        await conn.execute('''
-        CREATE TABLE IF NOT EXISTS ticket_threads (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id     TEXT,
-            contact_id    TEXT,
-            sender        TEXT,
-            content       TEXT,
-            created_time  TEXT,
-            UNIQUE(ticket_id, created_time)
-        )
-        ''')
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ticket_threads (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id     TEXT,
+                contact_id    TEXT,
+                sender        TEXT,
+                content       TEXT,
+                created_time  TEXT,
+                UNIQUE(ticket_id, created_time)
+            )
+        """)
         for t in threads:
             sender  = t.get("fromEmail") or t.get("sender") or "unknown"
-            content = t.get("content", "").strip()
+            content = (t.get("content") or "").strip()
             created = t.get("createdTime") or datetime.utcnow().isoformat()
             await conn.execute(
-                "INSERT OR IGNORE INTO ticket_threads (ticket_id, contact_id, sender, content, created_time) VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO ticket_threads "
+                "(ticket_id, contact_id, sender, content, created_time) VALUES (?, ?, ?, ?, ?)",
                 (ticket_id, contact_id, sender, content, created)
             )
         await conn.commit()
+
+    # Trigger Dropbox sync to persist DB
+    from app.app_core import sync_mgr  # ensure we use the sync manager
+    await sync_mgr.queue()
 
     return {"status": "ok", "ticketId": ticket_id, "threads_stored": len(threads)}
