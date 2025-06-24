@@ -19,6 +19,10 @@ from pydantic import BaseModel, Field, validator
 from openai import OpenAI, AsyncOpenAI, OpenAIError
 from dotenv import load_dotenv
 
+# --- API helpers & webhook router ---
+from app.api_search_helpers import init_db_path, get_ticket_history, get_customer_history
+from app.webhook_integration import router as webhook_router
+
 # --- Load environment variables ---
 load_dotenv()
 
@@ -70,10 +74,12 @@ app.add_middleware(
 client       = OpenAI(api_key=OPENAI_API_KEY)
 async_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-# --- Tokenizer ---
+# --- Tokenizer helpers ---
 tokenizer = tiktoken.get_encoding("cl100k_base")
+
 def num_tokens(text: str) -> int:
     return len(tokenizer.encode(text))
+
 def count_and_log(name: str, text: str) -> int:
     toks = num_tokens(text)
     logger.info(f"[TokenUsage] {name}: {toks} tokens")
@@ -146,7 +152,7 @@ class DropboxSyncManager:
 
 sync_mgr = DropboxSyncManager()
 
-# --- Database init & download with migration ---
+# --- Database download & init with migration ---
 async def download_db():
     try:
         dbx = await get_dropbox_client()
@@ -158,7 +164,7 @@ async def download_db():
 
 async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # 1) Opret tickets-tabellen
+        # 1) tickets
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS tickets (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,8 +176,7 @@ async def init_db():
                 created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
-
-        # 2) Opret ticket_threads (uden de migrerede kolonner)
+        # 2) ticket_threads base
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,23 +186,19 @@ async def init_db():
                 content      TEXT
             );
         ''')
-
-        # 3) Migration: tilføj contact_id & created_time hvis mangler
+        # 3) migrations
         cursor = await conn.execute("PRAGMA table_info(ticket_threads);")
         cols = [row[1] for row in await cursor.fetchall()]
-
         if 'contact_id' not in cols:
             await conn.execute("ALTER TABLE ticket_threads ADD COLUMN contact_id TEXT;")
             logger.info("Migrated ticket_threads: added contact_id column")
-
         if 'created_time' not in cols:
             await conn.execute("ALTER TABLE ticket_threads ADD COLUMN created_time TEXT;")
             logger.info("Migrated ticket_threads: added created_time column")
-
         await conn.commit()
         logger.info("DB initialized (with full migration)")
 
-# --- Lazy Load FAISS & metadata ---
+# --- Lazy load FAISS & metadata ---
 async def load_index_meta():
     global index, metadata
     try:
@@ -208,8 +209,7 @@ async def load_index_meta():
         logger.exception("Failed to load FAISS index/metadata")
         raise RuntimeError("Index load failed") from e
 
-# --- Webhook routes (Zoho-token håndteres dér) ---
-from app.webhook_integration import router as webhook_router
+# --- Include Zoho webhook router ---
 app.include_router(webhook_router)
 
 # --- Request/Response Models ---
@@ -227,8 +227,6 @@ class AnswerRequest(BaseModel):
 
 class AnswerResponse(BaseModel):
     answer: str
-
-from app.api_search_helpers import init_db_path, get_ticket_history, get_customer_history
 
 # --- /api/answer endpoint ---
 @app.post("/api/answer", response_model=AnswerResponse)
@@ -265,7 +263,7 @@ async def api_answer(req: AnswerRequest):
         ctx.append(seg)
         used += tok
 
-    # 5) Byg prompt
+    # 5) Build prompt
     parts = ["Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver."]
     if ticket_hist:
         parts += ["Tidligere samtaler (dette ticket):"] + ticket_hist
@@ -275,7 +273,7 @@ async def api_answer(req: AnswerRequest):
     parts += [f"Spørgsmål: {req.question}", "Svar:"]
     prompt = "\n\n".join(parts)
 
-    # 6) Chat completion med error‐handling
+    # 6) Chat completion w/ error handling
     try:
         chat = await async_client.chat.completions.create(
             model=CHAT_MODEL,
@@ -285,10 +283,10 @@ async def api_answer(req: AnswerRequest):
         )
         answer = chat.choices[0].message.content.strip()
     except OpenAIError as e:
-        logger.exception("OpenAI‐kald fejlede")
-        raise HTTPException(status_code=502, detail="OpenAI‐tjeneste fejlede. Prøv igen senere.") from e
+        logger.exception("OpenAI-kald fejlede")
+        raise HTTPException(status_code=502, detail="OpenAI-service fejlede. Prøv igen senere.") from e
 
-    # 7) Gem svar
+    # 7) Save to DB
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
             "INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, 'RAG')",
@@ -324,7 +322,7 @@ async def update_ticket(log: LogRequest):
     await sync_mgr.queue()
     return {"status": "ok"}
 
-# --- Healthcheck & Render uptime-check på HEAD / og GET / ---
+# --- Healthcheck endpoints ---
 @app.head("/", include_in_schema=False)
 async def health_head():
     return JSONResponse(status_code=200, content=None)
@@ -333,16 +331,16 @@ async def health_head():
 async def health_get():
     return {"status": "ok"}
 
-# --- Startup & shutdown ---
+# --- Startup & shutdown hooks ---
 @app.on_event("startup")
 async def on_startup():
-    # 1) download DB
+    # 1) Download DB fra Dropbox
     await download_db()
-    # 2) init DB + migration
+    # 2) Initier DB + migrationer
     await init_db()
-    # 3) init api_search_helpers
+    # 3) Konfigurer api_search_helpers
     init_db_path(LOCAL_DB_PATH)
-    # 4) (valgfrit) preload index/metadata for tidlig fejl
+    # 4) (Valgfrit) preload FAISS-index/metadata for tidlig fejl
     try:
         await load_index_meta()
     except RuntimeError:
@@ -351,5 +349,6 @@ async def on_startup():
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    # Uploader DB én sidste gang
     await sync_mgr.queue()
     await asyncio.sleep(2)
