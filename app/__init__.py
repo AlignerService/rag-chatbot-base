@@ -152,7 +152,7 @@ async def download_db():
 
 async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # Opret tickets-tabellen
+        # 1) Opret tickets
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS tickets (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,7 +165,7 @@ async def init_db():
             );
         ''')
 
-        # Opret ticket_threads uden created_time (migreres næste)
+        # 2) Opret ticket_threads med kerne-felter
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -176,15 +176,26 @@ async def init_db():
             );
         ''')
 
-        # Tjek og migrér: tilføj created_time hvis ikke eksisterer
+        # 3) Hent eksisterende kolonner
         cursor = await conn.execute("PRAGMA table_info(ticket_threads);")
         cols = [row[1] for row in await cursor.fetchall()]
+
+        # 4) Migrér contact_id, hvis nødvendig
+        if 'contact_id' not in cols:
+            await conn.execute(
+                "ALTER TABLE ticket_threads ADD COLUMN contact_id TEXT;"
+            )
+            logger.info("Migrated ticket_threads: added contact_id column")
+
+        # 5) Migrér created_time, hvis nødvendig
         if 'created_time' not in cols:
-            await conn.execute("ALTER TABLE ticket_threads ADD COLUMN created_time TEXT;")
+            await conn.execute(
+                "ALTER TABLE ticket_threads ADD COLUMN created_time TEXT;"
+            )
             logger.info("Migrated ticket_threads: added created_time column")
 
         await conn.commit()
-        logger.info("DB initialized (with migration)")
+        logger.info("DB initialized (with full migration)")
 
 # --- Lazy Load FAISS & metadata ---
 async def load_index_meta():
