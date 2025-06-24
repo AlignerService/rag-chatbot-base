@@ -29,7 +29,7 @@ jobs:
           python build_index.py
 
       - name: Upload index as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: faiss-index
           path: |
