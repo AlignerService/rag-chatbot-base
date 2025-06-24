@@ -1,24 +1,24 @@
-# render.yaml
 services:
   - type: web
-    name: rag-chatbot-base
+    name: rag-chatbot
     env: python
-    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
-    autoDeploy: true
     envVars:
-      - key: DROPBOX_TOKEN
-        fromEnvVar: DROPBOX_TOKEN
-      - key: ZOHO_CLIENT_ID
-        fromEnvVar: ZOHO_CLIENT_ID
-      - key: ZOHO_CLIENT_SECRET
-        fromEnvVar: ZOHO_CLIENT_SECRET
-      - key: ZOHO_REFRESH_TOKEN
-        fromEnvVar: ZOHO_REFRESH_TOKEN
+      - key: OPENAI_API_KEY
+        fromSecret: OPENAI_API_KEY
+      - key: DROPBOX_CLIENT_ID
+      - key: DROPBOX_CLIENT_SECRET
+      - key: DROPBOX_REFRESH_TOKEN
       - key: DROPBOX_DB_PATH
-        value: /knowledge.sqlite
+      - key: ZOHO_CLIENT_ID
+      - key: ZOHO_CLIENT_SECRET
+      - key: ZOHO_REFRESH_TOKEN
       - key: LOCAL_DB_PATH
         value: /tmp/knowledge.sqlite
-      - key: DATABASE_PATH
-        value: /tmp/knowledge.sqlite
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-ada-002
+      - key: OPENAI_CHAT_MODEL
+        value: gpt-4
+      - key: OPENAI_TEMPERATURE
+        value: "0.2"
