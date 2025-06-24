@@ -1,74 +1,58 @@
-# app/api_search_helpers.py
-
 import aiosqlite
-from typing import List, Optional
+from typing import List
+from datetime import datetime
 
-# Will be initialized from app.py on startup
-LOCAL_DB_PATH: Optional[str] = None
+LOCAL_DB_PATH = None
 
 def init_db_path(path: str):
     """
-    Initialize the module-level database path. Must be called before using
-    get_ticket_history or get_customer_history.
+    Initialize the module-level database path. Call this once on startup.
     """
     global LOCAL_DB_PATH
     LOCAL_DB_PATH = path
 
 async def get_ticket_history(ticket_id: str) -> List[str]:
     """
-    Fetches all message threads for a single ticket in chronological order.
-    Returns a list of strings like "sender: content".
+    Retrieve chronological history (sender: content) for a specific ticket_id.
     """
     if LOCAL_DB_PATH is None:
         raise RuntimeError("Database path not initialized. Call init_db_path() first.")
     rows: List[str] = []
-    query = """
-SELECT
-  sender || ': ' || content
-FROM ticket_threads
-WHERE ticket_id = ?
-ORDER BY datetime(created_time) ASC
-"""
+    query = '''
+        SELECT sender || ': ' || content
+        FROM ticket_threads
+        WHERE ticket_id = ?
+        ORDER BY datetime(created_time) ASC
+    '''
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        async with conn.execute(query, (ticket_id,)) as cur:
-            async for row in cur:
-                rows.append(row[0])
+        async with conn.execute(query, (ticket_id,)) as cursor:
+            async for record in cursor:
+                rows.append(record[0])
     return rows
 
-async def get_customer_history(
-    contact_id: str,
-    exclude_ticket_id: Optional[str] = None
-) -> List[str]:
+async def get_customer_history(contact_id: str, exclude_ticket_id: str = None) -> List[str]:
     """
-    Fetches all message threads for a given contact across tickets,
-    optionally excluding the current ticket. Returns a list of strings
-    like "sender: content" in chronological order.
+    Retrieve chronological history (sender: content) across all tickets for a contact_id,
+    optionally excluding the current ticket.
     """
     if LOCAL_DB_PATH is None:
         raise RuntimeError("Database path not initialized. Call init_db_path() first.")
     rows: List[str] = []
-
+    # Build query
+    base = '''
+        SELECT sender || ': ' || content
+        FROM ticket_threads
+        WHERE contact_id = ?
+    '''
     if exclude_ticket_id:
-        query = """
-SELECT
-  sender || ': ' || content
-FROM ticket_threads
-WHERE contact_id = ? AND ticket_id != ?
-ORDER BY datetime(created_time) ASC
-"""
+        base += " AND ticket_id != ?"
         params = (contact_id, exclude_ticket_id)
     else:
-        query = """
-SELECT
-  sender || ': ' || content
-FROM ticket_threads
-WHERE contact_id = ?
-ORDER BY datetime(created_time) ASC
-"""
         params = (contact_id,)
+    base += " ORDER BY datetime(created_time) ASC"
 
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        async with conn.execute(query, params) as cur:
-            async for row in cur:
-                rows.append(row[0])
+        async with conn.execute(base, params) as cursor:
+            async for record in cursor:
+                rows.append(record[0])
     return rows
