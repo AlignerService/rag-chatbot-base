@@ -12,9 +12,10 @@ import dropbox
 import tiktoken
 import aiohttp
 import aiosqlite
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, HTTPException, Body
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
-from openai import OpenAI, AsyncOpenAI
+from openai import OpenAI, AsyncOpenAI, OpenAIError
 from dotenv import load_dotenv
 
 # --- Load environment variables ---
@@ -46,13 +47,6 @@ DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
 DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH")
 LOCAL_DB_PATH         = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 
-ZOHO_CLIENT_ID       = os.getenv("ZOHO_CLIENT_ID")
-ZOHO_CLIENT_SECRET   = os.getenv("ZOHO_CLIENT_SECRET")
-ZOHO_REFRESH_TOKEN   = os.getenv("ZOHO_REFRESH_TOKEN")
-ZOHO_TOKEN_URL       = "https://accounts.zoho.eu/oauth/v2/token"
-ZOHO_API_URL         = "https://desk.zoho.eu/api/v1"
-TOKEN_CACHE_FILE     = os.getenv("ZOHO_TOKEN_CACHE", "token_cache.json")
-
 INDEX_FILE           = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 METADATA_FILE        = os.getenv("METADATA_FILE", "metadata.json")
 
@@ -63,11 +57,19 @@ metadata = None
 # --- FastAPI app ---
 app = FastAPI()
 
+# --- CORS (så UI kan kalde fra hvor som helst) ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # --- OpenAI clients ---
 client       = OpenAI(api_key=OPENAI_API_KEY)
 async_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-# --- Tokenizer helpers ---
+# --- Tokenizer ---
 tokenizer = tiktoken.get_encoding("cl100k_base")
 def num_tokens(text: str) -> int:
     return len(tokenizer.encode(text))
@@ -116,7 +118,7 @@ async def get_dropbox_client():
     token = await dropbox_token_mgr.get_access_token()
     return dropbox.Dropbox(token)
 
-# --- Dropbox Sync Manager with retry/back-off ---
+# --- Dropbox Sync Manager ---
 class DropboxSyncManager:
     def __init__(self):
         self._lock = asyncio.Lock()
@@ -128,41 +130,31 @@ class DropboxSyncManager:
                 self._task = asyncio.create_task(self._upload())
 
     async def _upload(self):
-        backoff = 1
-        for attempt in range(3):
-            try:
-                dbx = await get_dropbox_client()
-                with open(LOCAL_DB_PATH, 'rb') as f:
-                    dbx.files_upload(f.read(), DROPBOX_DB_PATH,
-                                     mode=dropbox.files.WriteMode.overwrite)
-                logger.info("Uploaded DB to Dropbox")
-                return
-            except Exception:
-                logger.exception(f"Dropbox upload failed, retry in {backoff}s")
-                await asyncio.sleep(backoff)
-                backoff *= 2
+        try:
+            dbx = await get_dropbox_client()
+            # flyt fil-IO ud i en tråd
+            data = await asyncio.to_thread(lambda: open(LOCAL_DB_PATH, 'rb').read())
+            await asyncio.to_thread(dbx.files_upload, data, DROPBOX_DB_PATH, mode=dropbox.files.WriteMode.overwrite)
+            logger.info("Uploaded DB to Dropbox")
+        except Exception:
+            logger.exception("Dropbox upload failed")
 
 sync_mgr = DropboxSyncManager()
 
-# --- Database init & download with migration & back-filling ---
+# --- Database init & download with migration ---
 async def download_db():
-    backoff = 1
-    for attempt in range(3):
-        try:
-            dbx = await get_dropbox_client()
-            md, res = await asyncio.to_thread(dbx.files_download, DROPBOX_DB_PATH)
-            with open(LOCAL_DB_PATH, 'wb') as f:
-                f.write(res.content)
-            logger.info("Downloaded DB from Dropbox")
-            return
-        except Exception:
-            logger.exception(f"Failed to download DB, retry in {backoff}s")
-            await asyncio.sleep(backoff)
-            backoff *= 2
+    try:
+        dbx = await get_dropbox_client()
+        # hent fra Dropbox i en tråd
+        md, res = await asyncio.to_thread(dbx.files_download, DROPBOX_DB_PATH)
+        await asyncio.to_thread(lambda: open(LOCAL_DB_PATH, 'wb').write(res.content))
+        logger.info("Downloaded DB from Dropbox")
+    except Exception:
+        logger.exception("Failed to download DB")
 
 async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # 1) Create tickets
+        # 1) Opret tickets-tabellen
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS tickets (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,7 +166,8 @@ async def init_db():
                 created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
-        # 2) Create ticket_threads without new columns
+
+        # 2) Opret ticket_threads uden created_time (migration tilføjer senere)
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,41 +177,35 @@ async def init_db():
                 content      TEXT
             );
         ''')
-        # 3) Migrate: add created_time with default
+
+        # 3) Migration: tilføj created_time hvis mangler
         cursor = await conn.execute("PRAGMA table_info(ticket_threads);")
         cols = [row[1] for row in await cursor.fetchall()]
         if 'created_time' not in cols:
-            await conn.execute(
-                "ALTER TABLE ticket_threads ADD COLUMN created_time TEXT DEFAULT CURRENT_TIMESTAMP;"
-            )
+            await conn.execute("ALTER TABLE ticket_threads ADD COLUMN created_time TEXT;")
             logger.info("Migrated ticket_threads: added created_time column")
-        # 4) Backfill any NULLs
-        await conn.execute(
-            "UPDATE ticket_threads SET created_time = CURRENT_TIMESTAMP WHERE created_time IS NULL;"
-        )
-        # 5) Unique constraint can’t be ALTERed—log a reminder
-        logger.info("Ensure UNIQUE(ticket_id,created_time) on ticket_threads manually if needed")
+
         await conn.commit()
         logger.info("DB initialized (with migration)")
 
-# --- Lazy–load FAISS index & metadata with error-handling ---
+# --- Lazy Load FAISS & metadata ---
 async def load_index_meta():
     global index, metadata
     try:
         index = await asyncio.to_thread(faiss.read_index, INDEX_FILE)
-        with open(METADATA_FILE, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)
+        metadata = await asyncio.to_thread(lambda: json.load(open(METADATA_FILE, 'r', encoding='utf-8')))
         logger.info("Loaded FAISS index and metadata")
     except Exception as e:
-        logger.error("Failed to load FAISS index or metadata: %s", e)
-        raise
+        logger.exception("Failed to load FAISS index/metadata")
+        raise RuntimeError("Index load failed") from e
 
-# --- Health-check root endpoint ---
-@app.get("/")
-async def root():
-    return {"status": "ok", "time": datetime.utcnow().isoformat()}
+# --- API Search Helpers init (flyttet til on_startup) ---
 
-# --- Models & RAG-endpoint ---
+# --- Webhook routes (Zoho-token håndteres dér) ---
+from app.webhook_integration import router as webhook_router
+app.include_router(webhook_router)
+
+# --- Request/Response Models ---
 class AnswerRequest(BaseModel):
     ticketId:  str = Field(..., pattern=r'^[\w-]+$')
     contactId: str = Field(..., pattern=r'^[\w-]+$')
@@ -228,43 +215,41 @@ class AnswerRequest(BaseModel):
     def nonempty(cls, v):
         v = v.strip()
         if not v:
-            raise ValueError('Question must not be empty')
+            raise ValueError('Question må ikke være tom')
         return html.escape(v)
 
 class AnswerResponse(BaseModel):
     answer: str
 
-from app.api_search_helpers import get_ticket_history, get_customer_history
+from app.api_search_helpers import init_db_path, get_ticket_history, get_customer_history
 
+# --- /api/answer endpoint med robust error‐handling ---
 @app.post("/api/answer", response_model=AnswerResponse)
 async def api_answer(req: AnswerRequest):
-    # Lazy load FAISS
     global index, metadata
+    # Lazy‐load index/metadata
     if index is None or metadata is None:
         await load_index_meta()
 
     # 1) Ticket history
     ticket_hist = await get_ticket_history(req.ticketId)
-    count_and_log("TicketHistory", "\n".join(ticket_hist))
+    ticket_text = "\n".join(ticket_hist)
+    count_and_log("TicketHistory", ticket_text)
 
-    # 2) Customer history
+    # 2) Customer history (uden cirkulær afhængighed)
     customer_hist = []
-    if num_tokens("\n".join(ticket_hist)) < 1000:
-        customer_hist = await get_customer_history(
-            req.contactId, exclude_ticket_id=req.ticketId
-        )
+    if num_tokens(ticket_text) < 1000:
+        customer_hist = await get_customer_history(req.contactId, exclude_ticket_id=req.ticketId)
     count_and_log("CustomerHistory", "\n".join(customer_hist))
 
-    # 3) RAG search
-    emb = await async_client.embeddings.create(
-        input=[req.question], model=EMBEDDING_MODEL
-    )
+    # 3) RAG‐søgeproces
+    emb = await async_client.embeddings.create(input=[req.question], model=EMBEDDING_MODEL)
     q_vec = np.array(emb.data[0].embedding, dtype=np.float32).reshape(1, -1)
     D, I = index.search(q_vec, 5)
     rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
     count_and_log("RAGChunks", "\n---\n".join(rag_chunks))
 
-    # 4) Assemble context
+    # 4) Trim context
     MAX_CTX = 3000
     used, ctx = 0, []
     for seg in ticket_hist + customer_hist + rag_chunks:
@@ -274,7 +259,7 @@ async def api_answer(req: AnswerRequest):
         ctx.append(seg)
         used += tok
 
-    # 5) Build prompt
+    # 5) Byg OpenAI‐prompt
     parts = ["Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver."]
     if ticket_hist:
         parts += ["Tidligere samtaler (dette ticket):"] + ticket_hist
@@ -284,31 +269,29 @@ async def api_answer(req: AnswerRequest):
     parts += [f"Spørgsmål: {req.question}", "Svar:"]
     prompt = "\n\n".join(parts)
 
-    # 6) Chat completion
-    chat = await async_client.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=TEMPERATURE,
-        max_tokens=500
-    )
-    answer = chat.choices[0].message.content.strip()
+    # 6) Chat‐completion med error‐handling
+    try:
+        chat = await async_client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=TEMPERATURE,
+            max_tokens=500
+        )
+        answer = chat.choices[0].message.content.strip()
+    except OpenAIError as e:
+        logger.exception("OpenAI‐kald fejlede")
+        raise HTTPException(status_code=502, detail="OpenAI‐tjeneste fejlede. Prøv igen senere.") from e
 
-    # 7) Save to DB
+    # 7) Gem svar i DB
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
-            "INSERT INTO tickets (ticket_id, contact_id, question, answer, source) "
-            "VALUES (?, ?, ?, ?, 'RAG')",
+            "INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, 'RAG')",
             (req.ticketId, req.contactId, req.question, answer)
         )
         await conn.commit()
     await sync_mgr.queue()
 
     return {"answer": answer}
-
-# --- Alias for UI (so fetch("/answer") stadig virker) ---
-@app.post("/answer", response_model=AnswerResponse)
-async def alias_answer(req: AnswerRequest = Body(...)):
-    return await api_answer(req)
 
 # --- /update_ticket endpoint ---
 class LogRequest(BaseModel):
@@ -319,25 +302,36 @@ class LogRequest(BaseModel):
 async def update_ticket(log: LogRequest):
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
-            "UPDATE tickets "
-            "SET answer = ?, source = 'FINAL', created_at = CURRENT_TIMESTAMP "
-            "WHERE ticket_id = ?",
+            """
+            UPDATE tickets
+            SET answer = ?, source = 'FINAL', created_at = CURRENT_TIMESTAMP
+            WHERE ticket_id = ?
+            """,
             (html.escape(log.finalAnswer), log.ticketId)
         )
         await conn.commit()
     await sync_mgr.queue()
     return {"status": "ok"}
 
+# --- Healthcheck/home ---
+@app.get("/")
+async def health():
+    return {"status": "ok"}
+
 # --- Startup & shutdown ---
 @app.on_event("startup")
 async def on_startup():
-    # 1) Hent DB fra Dropbox (med retry)
+    # 1) download DB
     await download_db()
-    # 2) Init og migrér DB-skema
+    # 2) init DB + migration
     await init_db()
-    # 3) Nu kan api_search_helpers bruge den nye DB-path
-    from app.api_search_helpers import init_db_path
+    # 3) init api_search_helpers
     init_db_path(LOCAL_DB_PATH)
+    # 4) (optional) preload index/metadata to få fejl tidligt
+    try:
+        await load_index_meta()
+    except RuntimeError:
+        pass
     logger.info("Startup complete")
 
 @app.on_event("shutdown")
