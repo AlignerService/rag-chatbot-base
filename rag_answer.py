@@ -47,7 +47,7 @@ def get_rag_answer(question: str, top_k: int = 5) -> str:
     # 4) Build prompt
     context_text = "\n---\n".join(selected)
     prompt = (
-        "Du er Karin fra AlignerService, en erfaren klinisk rådgiver.\n"
+        "Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver.\n"
         "Svar baseret på følgende kontekst:\n"
         f"{context_text}\n\n"
         f"Spørgsmål: {question}\n"
