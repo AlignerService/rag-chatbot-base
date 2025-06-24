@@ -10,59 +10,60 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# --- Load chunks, embeddings, and index ---
+# --- Load chunks and index ---
 with open("all_chunks.json", "r", encoding="utf-8") as f:
     chunks = json.load(f)
-embeddings = np.load("embeddings.npy")
+# Note: embeddings.npy no longer needed here if index stores vectors
 index = faiss.read_index("faiss.index")
 
 # --- Tokenizer ---
-tokenizer = tiktoken.get_encoding("cl100k_base")  # or encoding_for_model
+tokenizer = tiktoken.get_encoding("cl100k_base")
 
 def num_tokens(text: str) -> int:
     return len(tokenizer.encode(text))
 
 
 def get_rag_answer(question: str, top_k: int = 5) -> str:
-    # 1) Get embedding for question
-    resp = client.embeddings.create(input=[question], model="text-embedding-3-small")
-    question_embedding = np.array(resp.data[0].embedding, dtype=np.float32).reshape(1, -1)
+    # 1) Embed question
+    resp = client.embeddings.create(input=[question], model=os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002"))
+    q_emb = np.array(resp.data[0].embedding, dtype=np.float32).reshape(1, -1)
 
     # 2) Search FAISS
-    D, I = index.search(question_embedding, top_k)
+    D, I = index.search(q_emb, top_k)
     context_chunks = [chunks[idx]["text"] for idx in I[0] if 0 <= idx < len(chunks)]
 
-    # 3) Trim to max tokens
+    # 3) Trim tokens
     max_tokens = 3000
-    current_tokens = 0
     selected = []
-    for chunk in context_chunks:
-        ctoks = num_tokens(chunk)
-        if current_tokens + ctoks <= max_tokens:
-            selected.append(chunk)
-            current_tokens += ctoks
+    used = 0
+    for c in context_chunks:
+        ct = num_tokens(c)
+        if used + ct <= max_tokens:
+            selected.append(c)
+            used += ct
         else:
             break
 
     # 4) Build prompt
     context_text = "\n---\n".join(selected)
     prompt = (
-        "You are an assistant for a dental company. Answer based only on the following context:\n"
+        "Du er Karin fra AlignerService, en erfaren klinisk rådgiver.\n"
+        "Svar baseret på følgende kontekst:\n"
         f"{context_text}\n\n"
-        f"Question: {question}\n"
-        "Answer:"
+        f"Spørgsmål: {question}\n"
+        "Svar:"
     )
 
-    # 5) Get chat completion
-    chat_resp = client.chat.completions.create(
+    # 5) Chat completion
+    chat = client.chat.completions.create(
         model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4"),
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
+        messages=[{"role":"user","content":prompt}],
+        temperature=float(os.getenv("OPENAI_TEMPERATURE", 0.2)),
+        max_tokens=300
     )
-    return chat_resp.choices[0].message.content.strip()
+    return chat.choices[0].message.content.strip()
 
 
 if __name__ == "__main__":
-    q = input("Enter your question: ")
-    answer = get_rag_answer(q)
-    print("Answer:\n", answer)
+    q = input("Indtast dit spørgsmål: ")
+    print(get_rag_answer(q))
