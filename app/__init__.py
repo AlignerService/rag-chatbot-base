@@ -85,11 +85,13 @@ class AsyncDropboxTokenManager:
         self.access_token  = None
         self.expires_at    = 0
         self._lock         = asyncio.Lock()
+
     async def get_access_token(self):
         async with self._lock:
             if not self.access_token or time.time() >= self.expires_at:
                 await self._refresh()
             return self.access_token
+
     async def _refresh(self):
         url = "https://api.dropbox.com/oauth2/token"
         data = {
@@ -109,6 +111,7 @@ class AsyncDropboxTokenManager:
 dropbox_token_mgr = AsyncDropboxTokenManager(
     DROPBOX_CLIENT_ID, DROPBOX_CLIENT_SECRET, DROPBOX_REFRESH_TOKEN
 )
+
 async def get_dropbox_client():
     token = await dropbox_token_mgr.get_access_token()
     return dropbox.Dropbox(token)
@@ -118,10 +121,12 @@ class DropboxSyncManager:
     def __init__(self):
         self._lock = asyncio.Lock()
         self._task = None
+
     async def queue(self):
         async with self._lock:
             if not self._task or self._task.done():
                 self._task = asyncio.create_task(self._upload())
+
     async def _upload(self):
         try:
             dbx = await get_dropbox_client()
@@ -193,6 +198,7 @@ class AnswerRequest(BaseModel):
     ticketId:  str = Field(..., pattern=r'^[\w-]+$')
     contactId: str = Field(..., pattern=r'^[\w-]+$')
     question:  str
+
     @validator('question')
     def nonempty(cls, v):
         v = v.strip()
@@ -221,13 +227,13 @@ async def api_answer(req: AnswerRequest):
     if num_tokens(ticket_text) < 1000:
         customer_hist = await get_customer_history(
             req.contactId, exclude_ticket_id=req.ticketId)
-    count_and_log("CustomerHistory", "\n".join(customer_hist))
+    cust_text = "\n".join(customer_hist)
+    count_and_log("CustomerHistory", cust_text)
 
     # RAG search
     emb = await async_client.embeddings.create(
         input=[req.question], model=EMBEDDING_MODEL)
     q_vec = np.array(emb.data[0].embedding, dtype=np.float32).reshape(1, -1)
-<textarea style="display:none">    
     D, I = index.search(q_vec, 5)
     rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
     count_and_log("RAGChunks", "\n---\n".join(rag_chunks))
@@ -270,14 +276,13 @@ async def api_answer(req: AnswerRequest):
         await conn.commit()
     await sync_mgr.queue()
     return {"answer": answer}
-</textarea>
 
 # --- Alias for /answer ---
 @app.post("/answer", response_model=AnswerResponse)
 async def alias_answer(req: AnswerRequest = Body(...)):
     return await api_answer(req)
 
-# --- LogRequest model & /update_ticket endpoint ---
+# --- /update_ticket endpoint ---
 class LogRequest(BaseModel):
     ticketId:    str
     finalAnswer: str
