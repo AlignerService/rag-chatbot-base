@@ -8,14 +8,10 @@ from datetime import datetime
 import aiohttp
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request
-from dotenv import load_dotenv
 
-# --- Load environment variables ---
-load_dotenv()
+from app import LOCAL_DB_PATH     # <-- Brug den centrale db-sti
 router = APIRouter()
 
-# Use the same LOCAL_DB_PATH as in app.py
-DATABASE_PATH  = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 ZOHO_API_URL   = "https://desk.zoho.eu/api/v1"
 TOKEN_CACHE    = os.getenv("ZOHO_TOKEN_CACHE", "token_cache.json")
@@ -42,7 +38,6 @@ async def refresh_zoho_token():
         async with session.post(ZOHO_TOKEN_URL, data=payload) as resp:
             resp.raise_for_status()
             token_data = await resp.json()
-    # Compute expiry and cache
     token_data["expires_at"] = datetime.utcnow().timestamp() + token_data.get("expires_in", 0) - 60
     with open(TOKEN_CACHE, "w", encoding="utf-8") as f:
         json.dump(token_data, f)
@@ -68,6 +63,7 @@ async def receive_ticket(req: Request):
     if not ticket_id or not contact_id:
         raise HTTPException(status_code=400, detail="Missing 'ticketId' or 'contactId'.")
 
+    # Authorize against Zoho
     access_token = await get_valid_zoho_token()
     headers      = {"Authorization": f"Zoho-oauthtoken {access_token}"}
 
@@ -80,7 +76,7 @@ async def receive_ticket(req: Request):
     threads = data.get("data", [])
 
     # Store to SQLite
-    async with aiosqlite.connect(DATABASE_PATH) as conn:
+    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,8 +99,8 @@ async def receive_ticket(req: Request):
             )
         await conn.commit()
 
-    # Trigger Dropbox sync to persist DB
-       from app import sync_mgr
+    # Trigger Dropbox sync
+    from app import sync_mgr
     await sync_mgr.queue()
 
     return {"status": "ok", "ticketId": ticket_id, "threads_stored": len(threads)}
