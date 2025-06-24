@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 
 # --- Required env vars ---
 required = [
-    "OPENAI_API_KEY", "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET",
-    "DROPBOX_REFRESH_TOKEN", "DROPBOX_DB_PATH", "ZOHO_CLIENT_ID",
-    "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"
+    "OPENAI_API_KEY",
+    "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET", "DROPBOX_REFRESH_TOKEN", "DROPBOX_DB_PATH",
+    "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"
 ]
 missing = [v for v in required if not os.getenv(v)]
 if missing:
@@ -139,7 +139,7 @@ class DropboxSyncManager:
 
 sync_mgr = DropboxSyncManager()
 
-# --- Database init & download ---
+# --- Database init & download with migration ---
 async def download_db():
     try:
         dbx = await get_dropbox_client()
@@ -152,6 +152,7 @@ async def download_db():
 
 async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
+        # Opret tickets-tabellen
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS tickets (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,19 +164,27 @@ async def init_db():
                 created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
+
+        # Opret ticket_threads uden created_time (migreres næste)
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                ticket_id     TEXT,
-                contact_id    TEXT,
-                sender        TEXT,
-                content       TEXT,
-                created_time  TEXT,
-                UNIQUE(ticket_id, created_time)
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id    TEXT,
+                contact_id   TEXT,
+                sender       TEXT,
+                content      TEXT
             );
         ''')
+
+        # Tjek og migrér: tilføj created_time hvis ikke eksisterer
+        cursor = await conn.execute("PRAGMA table_info(ticket_threads);")
+        cols = [row[1] for row in await cursor.fetchall()]
+        if 'created_time' not in cols:
+            await conn.execute("ALTER TABLE ticket_threads ADD COLUMN created_time TEXT;")
+            logger.info("Migrated ticket_threads: added created_time column")
+
         await conn.commit()
-        logger.info("DB initialized: tickets & ticket_threads created")
+        logger.info("DB initialized (with migration)")
 
 # --- Lazy Load FAISS & metadata ---
 async def load_index_meta():
@@ -217,20 +226,19 @@ async def api_answer(req: AnswerRequest):
     if index is None or metadata is None:
         await load_index_meta()
 
-    # Ticket history
+    # 1) Ticket history
     ticket_hist = await get_ticket_history(req.ticketId)
     ticket_text = "\n".join(ticket_hist)
     count_and_log("TicketHistory", ticket_text)
 
-    # Customer history
+    # 2) Customer history
     customer_hist = []
     if num_tokens(ticket_text) < 1000:
         customer_hist = await get_customer_history(
             req.contactId, exclude_ticket_id=req.ticketId)
-    cust_text = "\n".join(customer_hist)
-    count_and_log("CustomerHistory", cust_text)
+    count_and_log("CustomerHistory", "\n".join(customer_hist))
 
-    # RAG search
+    # 3) RAG search
     emb = await async_client.embeddings.create(
         input=[req.question], model=EMBEDDING_MODEL)
     q_vec = np.array(emb.data[0].embedding, dtype=np.float32).reshape(1, -1)
@@ -238,7 +246,7 @@ async def api_answer(req: AnswerRequest):
     rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
     count_and_log("RAGChunks", "\n---\n".join(rag_chunks))
 
-    # Assemble context
+    # 4) Assemble context
     MAX_CTX = 3000
     used, ctx = 0, []
     for seg in ticket_hist + customer_hist + rag_chunks:
@@ -248,7 +256,7 @@ async def api_answer(req: AnswerRequest):
         ctx.append(seg)
         used += tok
 
-    # Build prompt
+    # 5) Build prompt
     parts = ["Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver."]
     if ticket_hist:
         parts += ["Tidligere samtaler (dette ticket):"] + ticket_hist
@@ -258,7 +266,7 @@ async def api_answer(req: AnswerRequest):
     parts += [f"Spørgsmål: {req.question}", "Svar:"]
     prompt = "\n\n".join(parts)
 
-    # Chat completion
+    # 6) Chat completion
     chat = await async_client.chat.completions.create(
         model=CHAT_MODEL,
         messages=[{"role":"user","content":prompt}],
@@ -267,7 +275,7 @@ async def api_answer(req: AnswerRequest):
     )
     answer = chat.choices[0].message.content.strip()
 
-    # Save to DB
+    # 7) Save to DB
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
             "INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, 'RAG')",
@@ -275,9 +283,10 @@ async def api_answer(req: AnswerRequest):
         )
         await conn.commit()
     await sync_mgr.queue()
+
     return {"answer": answer}
 
-# --- Alias for /answer ---
+# --- Alias for /answer (til dit UI) ---
 @app.post("/answer", response_model=AnswerResponse)
 async def alias_answer(req: AnswerRequest = Body(...)):
     return await api_answer(req)
