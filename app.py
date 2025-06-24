@@ -84,7 +84,7 @@ from app.webhook_integration import router as webhook_router
 app.include_router(webhook_router)
 
 # --- Import search helpers ---
-from app.api_search_helpers import get_ticket_history, get_customer_history
+from app.api_search_helpers import init_db_path, get_ticket_history, get_customer_history
 
 # --- Request/Response Models ---
 class AnswerRequest(BaseModel):
@@ -118,7 +118,7 @@ async def api_answer(req: AnswerRequest):
     # Gather customer history if tokens allow
     customer_hist = []
     if num_tokens(ticket_text) < 1000:
-        customer_hist = await get_customer_history(req.contactId)
+        customer_hist = await get_customer_history(req.contactId, exclude_ticket_id=req.ticketId)
     cust_text = "\n".join(customer_hist)
     count_and_log("CustomerHistory", cust_text)
 
@@ -182,6 +182,8 @@ async def api_answer(req: AnswerRequest):
 # --- Startup/Shutdown ---
 @app.on_event("startup")
 async def on_startup():
+    # Initialize helper module with DB path
+    init_db_path(LOCAL_DB_PATH)
     await download_db()
     await init_db()
     await load_index_meta()
