@@ -9,26 +9,26 @@ import aiohttp
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request
 
+from app import LOCAL_DB_PATH, sync_mgr
+
 router = APIRouter()
 
 ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 ZOHO_API_URL   = "https://desk.zoho.eu/api/v1"
 TOKEN_CACHE    = os.getenv("ZOHO_TOKEN_CACHE", "token_cache.json")
 
-
-async def load_cached_token() -> str | None:
+# --- Token cache helpers ---
+async def load_cached_token():
     try:
-        raw = await asyncio.to_thread(open, TOKEN_CACHE, "r", encoding="utf-8")
-        data = json.load(raw)
-        raw.close()
+        with open(TOKEN_CACHE, "r", encoding="utf-8") as f:
+            data = json.load(f)
         if data.get("access_token") and data.get("expires_at", 0) > datetime.utcnow().timestamp():
             return data["access_token"]
     except Exception:
-        return None
+        pass
     return None
 
-
-async def refresh_zoho_token() -> str:
+async def refresh_zoho_token():
     payload = {
         "refresh_token": os.getenv("ZOHO_REFRESH_TOKEN"),
         "client_id":     os.getenv("ZOHO_CLIENT_ID"),
@@ -39,41 +39,29 @@ async def refresh_zoho_token() -> str:
         async with session.post(ZOHO_TOKEN_URL, data=payload) as resp:
             resp.raise_for_status()
             token_data = await resp.json()
-
-    # Beregn og gem udløbstid
     token_data["expires_at"] = datetime.utcnow().timestamp() + token_data.get("expires_in", 0) - 60
-    def _write_cache(d):
-        with open(TOKEN_CACHE, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-    await asyncio.to_thread(_write_cache, token_data)
-
+    with open(TOKEN_CACHE, "w", encoding="utf-8") as f:
+        json.dump(token_data, f)
     return token_data["access_token"]
 
-
-async def get_valid_zoho_token() -> str:
+async def get_valid_zoho_token():
     token = await load_cached_token()
     if token:
         return token
     return await refresh_zoho_token()
 
-
+# --- Webhook endpoint ---
 @router.post("/webhook")
 async def receive_ticket(req: Request):
-    """
-    Modtag webhook fra Zoho med ticketId + contactId,
-    hent samtaler og gem i SQLite, og queue Dropbox-sync.
-    """
     payload    = await req.json()
     ticket_id  = payload.get("ticketId")
     contact_id = payload.get("contactId")
     if not ticket_id or not contact_id:
         raise HTTPException(status_code=400, detail="Missing 'ticketId' or 'contactId'.")
 
-    # Hent Zoho-token
+    # Fetch Zoho conversations
     access_token = await get_valid_zoho_token()
     headers      = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-
-    # Hent samtaler fra Zoho
     async with aiohttp.ClientSession() as session:
         url = f"{ZOHO_API_URL}/tickets/{ticket_id}/conversations"
         async with session.get(url, headers=headers) as resp:
@@ -81,12 +69,8 @@ async def receive_ticket(req: Request):
             data = await resp.json()
     threads = data.get("data", [])
 
-    # Først importer DB-sti og sync_mgr *inde i* funktionen
-    from app import LOCAL_DB_PATH, sync_mgr
-
-    # Gem i lokal SQLite
+    # Store to SQLite
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # Sørg for tabel eksisterer
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,7 +82,6 @@ async def receive_ticket(req: Request):
                 UNIQUE(ticket_id, created_time)
             )
         """)
-        # Indsæt tråde (INSERT OR IGNORE)
         for t in threads:
             sender  = t.get("fromEmail") or t.get("sender") or "unknown"
             content = (t.get("content") or "").strip()
@@ -110,7 +93,7 @@ async def receive_ticket(req: Request):
             )
         await conn.commit()
 
-    # Queue Dropbox‐sync
+    # Trigger Dropbox sync
     await sync_mgr.queue()
 
     return {"status": "ok", "ticketId": ticket_id, "threads_stored": len(threads)}
