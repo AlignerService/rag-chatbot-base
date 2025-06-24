@@ -9,17 +9,18 @@ import aiohttp
 import aiosqlite
 from fastapi import APIRouter, HTTPException, Request
 
-from app import LOCAL_DB_PATH, sync_mgr  # <-- kun DB-sti og sync_mgr
+# --- Læs DB-stien direkte fra miljøet (samme som i app/__init__.py) ---
+LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 
-router = APIRouter()
-
-# Zoho‐endpoints og cache
+# --- Zoho settings ---
 ZOHO_TOKEN_URL = "https://accounts.zoho.eu/oauth/v2/token"
 ZOHO_API_URL   = "https://desk.zoho.eu/api/v1"
 TOKEN_CACHE    = os.getenv("ZOHO_TOKEN_CACHE", "token_cache.json")
 
+router = APIRouter()
 
-async def _load_cached_token() -> str | None:
+# --- Token cache helpers ---
+async def load_cached_token():
     try:
         with open(TOKEN_CACHE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -29,8 +30,7 @@ async def _load_cached_token() -> str | None:
         pass
     return None
 
-
-async def _refresh_zoho_token() -> str:
+async def refresh_zoho_token():
     payload = {
         "refresh_token": os.getenv("ZOHO_REFRESH_TOKEN"),
         "client_id":     os.getenv("ZOHO_CLIENT_ID"),
@@ -40,42 +40,39 @@ async def _refresh_zoho_token() -> str:
     async with aiohttp.ClientSession() as session:
         async with session.post(ZOHO_TOKEN_URL, data=payload) as resp:
             resp.raise_for_status()
-            tk = await resp.json()
+            token_data = await resp.json()
 
-    expires = datetime.utcnow().timestamp() + tk.get("expires_in", 0) - 60
-    tk["expires_at"] = expires
+    token_data["expires_at"] = datetime.utcnow().timestamp() + token_data.get("expires_in", 0) - 60
     with open(TOKEN_CACHE, "w", encoding="utf-8") as f:
-        json.dump(tk, f)
-    return tk["access_token"]
+        json.dump(token_data, f)
 
+    return token_data["access_token"]
 
-async def _get_valid_zoho_token() -> str:
-    token = await _load_cached_token()
+async def get_valid_zoho_token():
+    token = await load_cached_token()
     if token:
         return token
-    return await _refresh_zoho_token()
+    return await refresh_zoho_token()
 
-
+# --- Webhook endpoint ---
 @router.post("/webhook")
 async def receive_ticket(req: Request):
     """
-    Håndterer Zoho‐webhook:
-      - læs ticketId/contactId
-      - hent samtaletråde fra Zoho
-      - gem i lokal SQLite på LOCAL_DB_PATH
-      - trigger Dropbox‐sync via sync_mgr
+    Webhook handler for Zoho ticket updates.
+    Expects JSON body med 'ticketId' og 'contactId'.
+    Henter alle samtaletråde for tikketet og gemmer dem i SQLite.
     """
-    payload = await req.json()
+    payload    = await req.json()
     ticket_id  = payload.get("ticketId")
     contact_id = payload.get("contactId")
     if not ticket_id or not contact_id:
         raise HTTPException(status_code=400, detail="Missing 'ticketId' or 'contactId'.")
 
-    # Hent OAuth‐token
-    token = await _get_valid_zoho_token()
-    headers = {"Authorization": f"Zoho-oauthtoken {token}"}
+    # 1) Hent gyldigt Zoho-token
+    access_token = await get_valid_zoho_token()
+    headers      = {"Authorization": f"Zoho-oauthtoken {access_token}"}
 
-    # Hent samtaletråde fra Zoho
+    # 2) Hent samtaletråde fra Zoho
     async with aiohttp.ClientSession() as session:
         url = f"{ZOHO_API_URL}/tickets/{ticket_id}/conversations"
         async with session.get(url, headers=headers) as resp:
@@ -83,9 +80,9 @@ async def receive_ticket(req: Request):
             data = await resp.json()
     threads = data.get("data", [])
 
-    # Gem til SQLite
+    # 3) Gem til SQLite
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # Sikr at tabellen findes (init_db i main sørger for schema, men vi dobbelttjekker)
+        # Sikr tabelstruktur
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,6 +94,7 @@ async def receive_ticket(req: Request):
                 UNIQUE(ticket_id, created_time)
             )
         """)
+        # Indsæt (ignore duplicates via UNIQUE)
         for t in threads:
             sender  = t.get("fromEmail") or t.get("sender") or "unknown"
             content = (t.get("content") or "").strip()
@@ -108,7 +106,8 @@ async def receive_ticket(req: Request):
             )
         await conn.commit()
 
-    # Trigger upload af DB til Dropbox
+    # 4) Trigger Dropbox-sync (importeres inde i funktionen for at undgå cirkularitet)
+    from app import sync_mgr
     await sync_mgr.queue()
 
     return {"status": "ok", "ticketId": ticket_id, "threads_stored": len(threads)}
