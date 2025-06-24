@@ -148,21 +148,23 @@ async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute('''
         CREATE TABLE IF NOT EXISTS tickets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id TEXT,
-            question TEXT,
-            answer TEXT,
-            source TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id     TEXT,
+            contact_id    TEXT,
+            question      TEXT,
+            answer        TEXT,
+            source        TEXT,
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
         await conn.execute('''
         CREATE TABLE IF NOT EXISTS ticket_threads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id TEXT,
-            sender TEXT,
-            content TEXT,
-            created_time TEXT,
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id     TEXT,
+            contact_id    TEXT,
+            sender        TEXT,
+            content       TEXT,
+            created_time  TEXT,
             UNIQUE(ticket_id, created_time)
         )
         ''')
@@ -172,7 +174,8 @@ async def init_db():
 # --- Zoho Token Helpers ---
 async def load_cached_token():
     try:
-        data = json.loads(open(TOKEN_CACHE_FILE).read())
+        with open(TOKEN_CACHE_FILE) as f:
+            data = json.load(f)
         if data.get("access_token") and data.get("expires_at") > datetime.utcnow().timestamp():
             return data["access_token"]
     except Exception:
@@ -225,7 +228,11 @@ async def top_chunks(query: str, k: int = 5):
 async def generate_answer(question: str, chunks: list):
     if not chunks:
         return "Der findes ikke nok information til at besvare spørgsmålet."
-    ctx = "\n\n---\n\n".join([c['text'] for c in chunks])
+    ctx = "
+
+---
+
+".join([c['text'] for c in chunks])
     prompt = (
         "Du er Karin fra AlignerService, en erfaren klinisk rådgiver.\n"
         "Svar så informativt som muligt baseret på følgende kontekst.\n"
@@ -242,6 +249,7 @@ async def generate_answer(question: str, chunks: list):
 # --- Request Models ---
 class AnswerRequest(BaseModel):
     ticketId: str = Field(..., max_length=100, pattern=r'^[\w-]+$')
+    contactId: str= Field(..., max_length=100, pattern=r'^[\w-]+$')
     question: str = Field(..., max_length=2000)
     @validator('question')
     def nonempty(cls, v):
@@ -271,8 +279,7 @@ async def health():
 
 @app.post("/update_ticket")
 async def update_ticket(req: UpdateRequest):
-    # Fetch and store from Zoho
-    ticket_id = req.ticketId
+    ticket_id  = req.ticketId
     access_token = await get_valid_zoho_token()
     headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
     async with aiohttp.ClientSession() as session:
@@ -283,11 +290,12 @@ async def update_ticket(req: UpdateRequest):
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ticket_id TEXT,
-                sender TEXT,
-                content TEXT,
-                created_time TEXT,
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticket_id     TEXT,
+                contact_id    TEXT,
+                sender        TEXT,
+                content       TEXT,
+                created_time  TEXT,
                 UNIQUE(ticket_id, created_time)
             )
         ''')
@@ -296,8 +304,8 @@ async def update_ticket(req: UpdateRequest):
             content = t.get("content", "")
             created = t.get("createdTime") or datetime.utcnow().isoformat()
             await conn.execute(
-                "INSERT OR IGNORE INTO ticket_threads (ticket_id, sender, content, created_time) VALUES (?, ?, ?, ?)",
-                (ticket_id, sender, content, created)
+                "INSERT OR IGNORE INTO ticket_threads (ticket_id, contact_id, sender, content, created_time) VALUES (?, ?, ?, ?, ?)",
+                (ticket_id, req.contactId, sender, content, created)
             )
         await conn.commit()
     await sync_mgr.queue()
@@ -310,8 +318,8 @@ async def api_answer(req: AnswerRequest):
     answer = await generate_answer(req.question, chunks)
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
-            'INSERT INTO tickets (ticket_id, question, answer, source) VALUES (?, ?, ?, ?)',
-            (req.ticketId, req.question, answer, "RAG")
+            'INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, ?)',
+            (req.ticketId, req.contactId, req.question, answer, "RAG")
         )
         await conn.commit()
     await sync_mgr.queue()
