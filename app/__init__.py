@@ -69,10 +69,8 @@ async_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 # --- Tokenizer ---
 tokenizer = tiktoken.get_encoding("cl100k_base")
-
 def num_tokens(text: str) -> int:
     return len(tokenizer.encode(text))
-
 def count_and_log(name: str, text: str) -> int:
     toks = num_tokens(text)
     logger.info(f"[TokenUsage] {name}: {toks} tokens")
@@ -87,13 +85,11 @@ class AsyncDropboxTokenManager:
         self.access_token  = None
         self.expires_at    = 0
         self._lock         = asyncio.Lock()
-
     async def get_access_token(self):
         async with self._lock:
             if not self.access_token or time.time() >= self.expires_at:
                 await self._refresh()
             return self.access_token
-
     async def _refresh(self):
         url = "https://api.dropbox.com/oauth2/token"
         data = {
@@ -113,7 +109,6 @@ class AsyncDropboxTokenManager:
 dropbox_token_mgr = AsyncDropboxTokenManager(
     DROPBOX_CLIENT_ID, DROPBOX_CLIENT_SECRET, DROPBOX_REFRESH_TOKEN
 )
-
 async def get_dropbox_client():
     token = await dropbox_token_mgr.get_access_token()
     return dropbox.Dropbox(token)
@@ -152,7 +147,6 @@ async def download_db():
 
 async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # Opret tickets‐tabellen
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS tickets (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -164,7 +158,6 @@ async def init_db():
                 created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
-        # Opret ticket_threads‐tabellen
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -179,7 +172,7 @@ async def init_db():
         await conn.commit()
         logger.info("DB initialized: tickets & ticket_threads created")
 
-# --- Load FAISS & metadata ---
+# --- Load FAISS & metadata (lazy) ---
 async def load_index_meta():
     global index, metadata
     index = await asyncio.to_thread(faiss.read_index, INDEX_FILE)
@@ -215,6 +208,7 @@ from app.api_search_helpers import get_ticket_history, get_customer_history
 @app.post("/api/answer", response_model=AnswerResponse)
 async def api_answer(req: AnswerRequest):
     global index, metadata
+    # Lazy-load FAISS index & metadata if needed
     if index is None or metadata is None:
         await load_index_meta()
 
@@ -280,9 +274,9 @@ async def api_answer(req: AnswerRequest):
 # --- Startup & shutdown ---
 @app.on_event("startup")
 async def on_startup():
+    # Kun download og DB-init; FAISS loades først når /api/answer kaldes
     await download_db()
     await init_db()
-    await load_index_meta()
     logger.info("Startup complete")
 
 @app.on_event("shutdown")
