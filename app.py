@@ -71,259 +71,109 @@ async_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 # --- Tokenizer ---
 tokenizer = tiktoken.get_encoding("cl100k_base")
 
-# --- Dropbox Token Manager ---
-class AsyncDropboxTokenManager:
-    def __init__(self, client_id, client_secret, refresh_token):
-        self.client_id     = client_id
-        self.client_secret = client_secret
-        self.refresh_token = refresh_token
-        self.access_token  = None
-        self.expires_at    = 0
-        self._lock         = asyncio.Lock()
+def num_tokens(text: str) -> int:
+    return len(tokenizer.encode(text))
 
-    async def get_access_token(self):
-        async with self._lock:
-            now = time.time()
-            if not self.access_token or now >= self.expires_at:
-                await self._refresh()
-            return self.access_token
+def count_and_log(name: str, text: str) -> int:
+    toks = num_tokens(text)
+    logger.info(f"[TokenUsage] {name}: {toks} tokens")
+    return toks
 
-    async def _refresh(self):
-        data = {
-            "grant_type":    "refresh_token",
-            "refresh_token": self.refresh_token,
-            "client_id":     self.client_id,
-            "client_secret": self.client_secret,
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post("https://api.dropbox.com/oauth2/token", data=data) as resp:
-                resp.raise_for_status()
-                tk = await resp.json()
-                self.access_token = tk["access_token"]
-                self.expires_at   = time.time() + tk.get("expires_in",14400) - 60
-                logger.info("Refreshed Dropbox token")
+# --- Include webhook routes ---
+from app.webhook_integration import router as webhook_router
+app.include_router(webhook_router)
 
-dropbox_token_mgr = AsyncDropboxTokenManager(
-    DROPBOX_CLIENT_ID, DROPBOX_CLIENT_SECRET, DROPBOX_REFRESH_TOKEN
-)
+# --- Search & Answer endpoint ---
+class AnswerRequest(BaseModel):
+    ticketId:  str = Field(..., pattern=r'^[\w-]+$')
+    contactId: str = Field(..., pattern=r'^[\w-]+$')
+    question:  str
 
-async def get_dropbox_client():
-    token = await dropbox_token_mgr.get_access_token()
-    return dropbox.Dropbox(token)
+    @validator("question")
+    def nonempty(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError("Question must not be empty")
+        return v
 
-# --- DB Sync Manager ---
-class DropboxSyncManager:
-    def __init__(self):
-        self._lock = asyncio.Lock()
-        self._task = None
+class AnswerResponse(BaseModel):
+    answer: str
 
-    async def queue(self):
-        async with self._lock:
-            if not self._task or self._task.done():
-                self._task = asyncio.create_task(self._upload())
-
-    async def _upload(self):
-        try:
-            dbx = await get_dropbox_client()
-            with open(LOCAL_DB_PATH, 'rb') as f:
-                dbx.files_upload(f.read(), DROPBOX_DB_PATH, mode=dropbox.files.WriteMode.overwrite)
-            logger.info("Uploaded DB to Dropbox")
-        except Exception:
-            logger.exception("Dropbox upload failed")
-
-sync_mgr = DropboxSyncManager()
-
-# --- DB init & Dropbox download ---
-async def download_db():
-    try:
-        dbx = await get_dropbox_client()
-        md, res = await asyncio.to_thread(dbx.files_download, DROPBOX_DB_PATH)
-        with open(LOCAL_DB_PATH, 'wb') as f:
-            f.write(res.content)
-        logger.info("Downloaded DB from Dropbox")
-    except Exception:
-        logger.exception("Failed to download DB")
-
-async def init_db():
-    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        await conn.execute('''
-        CREATE TABLE IF NOT EXISTS tickets (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id     TEXT,
-            contact_id    TEXT,
-            question      TEXT,
-            answer        TEXT,
-            source        TEXT,
-            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        ''')
-        await conn.execute('''
-        CREATE TABLE IF NOT EXISTS ticket_threads (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticket_id     TEXT,
-            contact_id    TEXT,
-            sender        TEXT,
-            content       TEXT,
-            created_time  TEXT,
-            UNIQUE(ticket_id, created_time)
-        )
-        ''')
-        await conn.commit()
-        logger.info("DB initialized locally")
-
-# --- Zoho Token Helpers ---
-async def load_cached_token():
-    try:
-        with open(TOKEN_CACHE_FILE) as f:
-            data = json.load(f)
-        if data.get("access_token") and data.get("expires_at") > datetime.utcnow().timestamp():
-            return data["access_token"]
-    except Exception:
-        pass
-    return None
-
-async def refresh_zoho_token():
-    payload = {
-        "refresh_token": ZOHO_REFRESH_TOKEN,
-        "client_id":     ZOHO_CLIENT_ID,
-        "client_secret": ZOHO_CLIENT_SECRET,
-        "grant_type":    "refresh_token"
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(ZOHO_TOKEN_URL, data=payload) as resp:
-            resp.raise_for_status()
-            token_data = await resp.json()
-    token_data["expires_at"] = datetime.utcnow().timestamp() + token_data.get("expires_in", 0) - 60
-    with open(TOKEN_CACHE_FILE, "w") as f:
-        json.dump(token_data, f)
-    return token_data["access_token"]
-
-async def get_valid_zoho_token():
-    token = await load_cached_token()
-    if token:
-        return token
-    return await refresh_zoho_token()
-
-# --- Load FAISS & Metadata ---
-async def load_index_meta():
-    global index, metadata
-    idx = await asyncio.to_thread(faiss.read_index, INDEX_FILE)
-    if idx.d != 1536:
-        raise RuntimeError("Dimension mismatch")
-    index = idx
+@app.post("/api/answer", response_model=AnswerResponse)
+async def api_answer(req: AnswerRequest):
+    # Load FAISS & metadata
+    index = faiss.read_index(INDEX_FILE)
     with open(METADATA_FILE, 'r', encoding='utf-8') as f:
         metadata = json.load(f)
-    logger.info("Loaded FAISS and metadata")
 
-# --- RAG Helpers ---
-async def get_embedding(text: str):
-    resp = await async_client.embeddings.create(input=[text], model=EMBEDDING_MODEL)
-    return resp.data[0].embedding
+    # Ticket history
+    ticket_hist = await get_ticket_history(req.ticketId)
+    ticket_text = "\n".join(ticket_hist)
+    tk_toks = count_and_log("TicketHistory", ticket_text)
 
-async def top_chunks(query: str, k: int = 5):
-    vec = await get_embedding(query)
-    D, I = await asyncio.to_thread(index.search, np.array([vec], dtype='float32'), k)
-    return [metadata[i] for i in I[0] if i < len(metadata)]
+    # Customer history if space
+    customer_hist = []
+    if tk_toks < 1000:
+        customer_hist = await get_customer_history(req.contactId)
+    cust_text = "\n".join(customer_hist)
+    ct_toks = count_and_log("CustomerHistory", cust_text)
 
-async def generate_answer(question: str, chunks: list):
-    if not chunks:
-        return "Der findes ikke nok information til at besvare spørgsmålet."
-    ctx = "
+    # RAG search
+    emb_resp = client.embeddings.create(input=[req.question], model=EMBEDDING_MODEL)
+    q_emb = np.array(emb_resp.data[0].embedding, dtype=np.float32).reshape(1, -1)
+    D, I = index.search(q_emb, 5)
+    rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
+    rag_text = "\n---\n".join(rag_chunks)
+    rc_toks = count_and_log("RAGChunks", rag_text)
 
----
+    # Trim
+    MAX_CTX = 3000
+    combined = ticket_hist + customer_hist + rag_chunks
+    trimmed, used = [], 0
+    for seg in combined:
+        tok = num_tokens(seg)
+        if used + tok > MAX_CTX:
+            logger.info(f"[TokenUsage] Dropped segment of {tok} tokens due to overflow")
+            break
+        trimmed.append(seg)
+        used += tok
+    logger.info(f"[TokenUsage] TotalContext: {used}/{MAX_CTX} tokens")
 
-".join([c['text'] for c in chunks])
-    prompt = (
-        "Du er Karin fra AlignerService, en erfaren klinisk rådgiver.\n"
-        "Svar så informativt som muligt baseret på følgende kontekst.\n"
-        f"Kontekst:\n{ctx}\n\nSpørgsmål:\n{question}\n\nSvar:"
-    )
-    res = await async_client.chat.completions.create(
+    # Build prompt
+    prompt_lines = ["Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver."]
+    if ticket_hist:
+        prompt_lines.append("Tidligere samtaler (dette ticket):")
+        prompt_lines.extend(ticket_hist)
+    if customer_hist:
+        prompt_lines.append("Tidligere samtaler (andre tickets):")
+        prompt_lines.extend(customer_hist)
+    prompt_lines.append("Faglig kontekst:")
+    prompt_lines.extend(rag_chunks)
+    prompt_lines.append(f"Spørgsmål: {req.question}")
+    prompt_lines.append("Svar:")
+    prompt = "\n\n".join(prompt_lines)
+
+    # Generate answer
+    chat = client.chat.completions.create(
         model=CHAT_MODEL,
         messages=[{"role":"user","content":prompt}],
         temperature=TEMPERATURE,
-        max_tokens=300,
+        max_tokens=500
     )
-    return res.choices[0].message.content.strip()
 
-# --- Request Models ---
-class AnswerRequest(BaseModel):
-    ticketId: str = Field(..., max_length=100, pattern=r'^[\w-]+$')
-    contactId: str= Field(..., max_length=100, pattern=r'^[\w-]+$')
-    question: str = Field(..., max_length=2000)
-    @validator('question')
-    def nonempty(cls, v):
-        v = html.escape(v.strip())
-        if not v:
-            raise ValueError('Question must not be empty')
-        return v
-
-class UpdateRequest(BaseModel):
-    ticketId: str = Field(..., max_length=100, pattern=r'^[\w-]+$')
-
-# --- Endpoints ---
-@app.get("/")
-def root():
-    return {"message": "FastAPI is up"}
-
-@app.get("/health")
-async def health():
-    try:
-        async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-            await conn.execute("SELECT 1")
-    except Exception:
-        return {"status": "error", "detail": "DB fail"}
-    if not index or not metadata:
-        return {"status": "error", "detail": "Index/meta missing"}
-    return {"status": "ok"}
-
-@app.post("/update_ticket")
-async def update_ticket(req: UpdateRequest):
-    ticket_id  = req.ticketId
-    access_token = await get_valid_zoho_token()
-    headers = {"Authorization": f"Zoho-oauthtoken {access_token}"}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(f"{ZOHO_API_URL}/tickets/{ticket_id}/conversations", headers=headers) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-    threads = data.get("data", [])
-    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS ticket_threads (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                ticket_id     TEXT,
-                contact_id    TEXT,
-                sender        TEXT,
-                content       TEXT,
-                created_time  TEXT,
-                UNIQUE(ticket_id, created_time)
-            )
-        ''')
-        for t in threads:
-            sender  = t.get("fromEmail") or t.get("sender") or "unknown"
-            content = t.get("content", "")
-            created = t.get("createdTime") or datetime.utcnow().isoformat()
-            await conn.execute(
-                "INSERT OR IGNORE INTO ticket_threads (ticket_id, contact_id, sender, content, created_time) VALUES (?, ?, ?, ?, ?)",
-                (ticket_id, req.contactId, sender, content, created)
-            )
-        await conn.commit()
-    await sync_mgr.queue()
-    return {"status": "ticket updated", "ticketId": ticket_id, "threads": len(threads)}
-
-@app.post("/api/answer")
-async def api_answer(req: AnswerRequest):
-    logger.info(f"Received AI question for ticketId {req.ticketId}")
-    chunks = await top_chunks(req.question)
-    answer = await generate_answer(req.question, chunks)
+    # Save answer
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
             'INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, ?)',
-            (req.ticketId, req.contactId, req.question, answer, "RAG")
+            (req.ticketId, req.contactId, req.question, chat.choices[0].message.content.strip(), 'RAG')
         )
         await conn.commit()
     await sync_mgr.queue()
-    return {"answer": answer}
+
+    return {"answer": chat.choices[0].message.content.strip()}
+
+# Helper imports
+from app.api_search_helpers import get_ticket_history, get_customer_history
 
 # --- Startup & Shutdown ---
 @app.on_event("startup")
