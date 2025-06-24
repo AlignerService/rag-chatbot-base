@@ -83,7 +83,10 @@ def count_and_log(name: str, text: str) -> int:
 from app.webhook_integration import router as webhook_router
 app.include_router(webhook_router)
 
-# --- Search & Answer endpoint ---
+# --- Import search helpers ---
+from app.api_search_helpers import get_ticket_history, get_customer_history
+
+# --- Request/Response Models ---
 class AnswerRequest(BaseModel):
     ticketId:  str = Field(..., pattern=r'^[\w-]+$')
     contactId: str = Field(..., pattern=r'^[\w-]+$')
@@ -94,88 +97,89 @@ class AnswerRequest(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("Question must not be empty")
-        return v
+        return html.escape(v)
 
 class AnswerResponse(BaseModel):
     answer: str
 
+# --- Answer Endpoint ---
 @app.post("/api/answer", response_model=AnswerResponse)
 async def api_answer(req: AnswerRequest):
-    # Load FAISS & metadata
+    # Load FAISS index & metadata
     index = faiss.read_index(INDEX_FILE)
     with open(METADATA_FILE, 'r', encoding='utf-8') as f:
         metadata = json.load(f)
 
-    # Ticket history
+    # Gather ticket history
     ticket_hist = await get_ticket_history(req.ticketId)
     ticket_text = "\n".join(ticket_hist)
-    tk_toks = count_and_log("TicketHistory", ticket_text)
+    count_and_log("TicketHistory", ticket_text)
 
-    # Customer history if space
+    # Gather customer history if tokens allow
     customer_hist = []
-    if tk_toks < 1000:
+    if num_tokens(ticket_text) < 1000:
         customer_hist = await get_customer_history(req.contactId)
     cust_text = "\n".join(customer_hist)
-    ct_toks = count_and_log("CustomerHistory", cust_text)
+    count_and_log("CustomerHistory", cust_text)
 
-    # RAG search
-    emb_resp = client.embeddings.create(input=[req.question], model=EMBEDDING_MODEL)
+    # RAG vector search
+    emb_resp = await async_client.embeddings.create(input=[req.question], model=EMBEDDING_MODEL)
     q_emb = np.array(emb_resp.data[0].embedding, dtype=np.float32).reshape(1, -1)
     D, I = index.search(q_emb, 5)
     rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
     rag_text = "\n---\n".join(rag_chunks)
-    rc_toks = count_and_log("RAGChunks", rag_text)
+    count_and_log("RAGChunks", rag_text)
 
-    # Trim
+    # Assemble context within limits
     MAX_CTX = 3000
     combined = ticket_hist + customer_hist + rag_chunks
-    trimmed, used = [], 0
+    used = 0
+    context = []
     for seg in combined:
         tok = num_tokens(seg)
         if used + tok > MAX_CTX:
-            logger.info(f"[TokenUsage] Dropped segment of {tok} tokens due to overflow")
+            logger.info(f"[TokenUsage] Dropped {tok} tokens segment due to overflow")
             break
-        trimmed.append(seg)
+        context.append(seg)
         used += tok
     logger.info(f"[TokenUsage] TotalContext: {used}/{MAX_CTX} tokens")
 
     # Build prompt
-    prompt_lines = ["Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver."]
+    prompt = []
+    prompt.append("Du er tandlæge Helle Hatt fra AlignerService, en erfaren klinisk rådgiver.")
     if ticket_hist:
-        prompt_lines.append("Tidligere samtaler (dette ticket):")
-        prompt_lines.extend(ticket_hist)
+        prompt.append("Tidligere samtaler (dette ticket):")
+        prompt.extend(ticket_hist)
     if customer_hist:
-        prompt_lines.append("Tidligere samtaler (andre tickets):")
-        prompt_lines.extend(customer_hist)
-    prompt_lines.append("Faglig kontekst:")
-    prompt_lines.extend(rag_chunks)
-    prompt_lines.append(f"Spørgsmål: {req.question}")
-    prompt_lines.append("Svar:")
-    prompt = "\n\n".join(prompt_lines)
+        prompt.append("Tidligere samtaler (andre tickets):")
+        prompt.extend(customer_hist)
+    prompt.append("Faglig kontekst:")
+    prompt.extend(rag_chunks)
+    prompt.append(f"Spørgsmål: {req.question}")
+    prompt.append("Svar:")
+    prompt_str = "\n\n".join(prompt)
 
-    # Generate answer
-    chat = client.chat.completions.create(
+    # Generate
+    chat = await async_client.chat.completions.create(
         model=CHAT_MODEL,
-        messages=[{"role":"user","content":prompt}],
+        messages=[{"role":"user","content":prompt_str}],
         temperature=TEMPERATURE,
         max_tokens=500
     )
+    answer = chat.choices[0].message.content.strip()
 
-    # Save answer
+    # Save to DB
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
             'INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, ?)',
-            (req.ticketId, req.contactId, req.question, chat.choices[0].message.content.strip(), 'RAG')
+            (req.ticketId, req.contactId, req.question, answer, 'RAG')
         )
         await conn.commit()
     await sync_mgr.queue()
 
-    return {"answer": chat.choices[0].message.content.strip()}
+    return {"answer": answer}
 
-# Helper imports
-from app.api_search_helpers import get_ticket_history, get_customer_history
-
-# --- Startup & Shutdown ---
+# --- Startup/Shutdown ---
 @app.on_event("startup")
 async def on_startup():
     await download_db()
