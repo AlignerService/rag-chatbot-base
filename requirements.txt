@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 openai>=1.0.0,<2.0.0
+python-dotenv
 pydantic
 tiktoken
 dropbox
