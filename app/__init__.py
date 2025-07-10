@@ -12,9 +12,10 @@ import dropbox
 import tiktoken
 import aiohttp
 import aiosqlite
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, validator
 from openai import OpenAI, AsyncOpenAI, OpenAIError
 from dotenv import load_dotenv
@@ -30,17 +31,18 @@ logger = logging.getLogger(__name__)
 required = [
     "OPENAI_API_KEY",
     "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET", "DROPBOX_REFRESH_TOKEN", "DROPBOX_DB_PATH",
-    "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"
+    "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN",
+    "RAG_BEARER_TOKEN",
 ]
 missing = [v for v in required if not os.getenv(v)]
 if missing:
     raise RuntimeError(f"Missing required env vars: {missing}")
 
 # --- Settings ---
-OPENAI_API_KEY      = os.getenv("OPENAI_API_KEY")
-EMBEDDING_MODEL     = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")
-CHAT_MODEL          = os.getenv("OPENAI_CHAT_MODEL", "gpt-4")
-TEMPERATURE         = float(os.getenv("OPENAI_TEMPERATURE", 0.2))
+OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY")
+EMBEDDING_MODEL      = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")
+CHAT_MODEL           = os.getenv("OPENAI_CHAT_MODEL", "gpt-4")
+TEMPERATURE          = float(os.getenv("OPENAI_TEMPERATURE", 0.2))
 
 DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID")
 DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET")
@@ -51,9 +53,7 @@ LOCAL_DB_PATH         = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 INDEX_FILE           = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 METADATA_FILE        = os.getenv("METADATA_FILE", "metadata.json")
 
-# --- Globals for FAISS & metadata ---
-index = None
-metadata = None
+RAG_BEARER_TOKEN     = os.getenv("RAG_BEARER_TOKEN")
 
 # --- FastAPI app ---
 app = FastAPI()
@@ -65,6 +65,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Security (Bearer token) ---
+bearer_scheme = HTTPBearer()
+
+def require_rag_token(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+):
+    if credentials.scheme.lower() != "bearer" or credentials.credentials != RAG_BEARER_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing RAG token")
+    return True
 
 # --- OpenAI clients ---
 client       = OpenAI(api_key=OPENAI_API_KEY)
@@ -149,7 +159,7 @@ sync_mgr = DropboxSyncManager()
 # --- Database init, schema + migrations ---
 async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # 1) Create tickets with full schema
+        # Create tickets table
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS tickets (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -161,7 +171,7 @@ async def init_db():
                 created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
-        # 2) Create ticket_threads with full schema
+        # Create ticket_threads table
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,29 +183,28 @@ async def init_db():
                 UNIQUE(ticket_id, created_time)
             );
         ''')
-        # 3) Migrate ticket_threads
+        # Migrations (add missing columns if any)
         cursor = await conn.execute("PRAGMA table_info(ticket_threads);")
         cols = {row[1] for row in await cursor.fetchall()}
         if 'contact_id' not in cols:
             await conn.execute("ALTER TABLE ticket_threads ADD COLUMN contact_id TEXT;")
-            logger.info("Migrated ticket_threads: added contact_id column")
+            logger.info("Migrated ticket_threads: added contact_id")
         if 'created_time' not in cols:
             await conn.execute("ALTER TABLE ticket_threads ADD COLUMN created_time TEXT;")
-            logger.info("Migrated ticket_threads: added created_time column")
-        # 4) Migrate tickets
+            logger.info("Migrated ticket_threads: added created_time")
         cursor = await conn.execute("PRAGMA table_info(tickets);")
         cols = {row[1] for row in await cursor.fetchall()}
         if 'contact_id' not in cols:
             await conn.execute("ALTER TABLE tickets ADD COLUMN contact_id TEXT;")
-            logger.info("Migrated tickets: added contact_id column")
+            logger.info("Migrated tickets: added contact_id")
         if 'source' not in cols:
             await conn.execute("ALTER TABLE tickets ADD COLUMN source TEXT;")
-            logger.info("Migrated tickets: added source column")
+            logger.info("Migrated tickets: added source")
         if 'created_at' not in cols:
             await conn.execute("ALTER TABLE tickets ADD COLUMN created_at TIMESTAMP;")
-            logger.info("Migrated tickets: added created_at column")
+            logger.info("Migrated tickets: added created_at")
         await conn.commit()
-        logger.info("DB initialized (with full schema and migrations)")
+        logger.info("DB initialized (with migrations)")
 
 # --- Download DB from Dropbox ---
 async def download_db():
@@ -207,7 +216,9 @@ async def download_db():
     except Exception:
         logger.exception("Failed to download DB")
 
-# --- Lazy Load FAISS & metadata ---
+# --- Lazy load FAISS & metadata ---
+index = None
+metadata = None
 async def load_index_meta():
     global index, metadata
     try:
@@ -218,7 +229,7 @@ async def load_index_meta():
         logger.exception("Failed to load FAISS index/metadata")
         raise RuntimeError("Index load failed") from e
 
-# --- Include webhook routes ---
+# --- Include other routers ---
 from app.webhook_integration import router as webhook_router
 app.include_router(webhook_router)
 
@@ -238,21 +249,25 @@ class AnswerRequest(BaseModel):
 class AnswerResponse(BaseModel):
     answer: str
 
-# --- API Search Helpers init ---
-from app.api_search_helpers import init_db_path, get_ticket_history, get_customer_history
+class LogRequest(BaseModel):
+    ticketId:    str
+    finalAnswer: str
 
-# --- /api/answer endpoint ---
-@app.post("/api/answer", response_model=AnswerResponse)
+# --- API Endpoints ---
+@app.post(
+    "/api/answer",
+    response_model=AnswerResponse,
+    dependencies=[Depends(require_rag_token)]
+)
 async def api_answer(req: AnswerRequest):
     global index, metadata
     if index is None or metadata is None:
         await load_index_meta()
 
-    # Ticket history
+    # History
     ticket_hist = await get_ticket_history(req.ticketId)
     count_and_log("TicketHistory", "\n".join(ticket_hist))
 
-    # Customer history
     customer_hist = []
     if num_tokens("\n".join(ticket_hist)) < 1000:
         customer_hist = await get_customer_history(req.contactId, exclude_ticket_id=req.ticketId)
@@ -294,9 +309,9 @@ async def api_answer(req: AnswerRequest):
             max_tokens=500
         )
         answer = chat.choices[0].message.content.strip()
-    except OpenAIError as e:
+    except OpenAIError:
         logger.exception("OpenAI call failed")
-        raise HTTPException(status_code=502, detail="OpenAI service error. Please try again later.") from e
+        raise HTTPException(status_code=502, detail="OpenAI service error. Please try again later.")
 
     # Store answer
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
@@ -309,17 +324,18 @@ async def api_answer(req: AnswerRequest):
 
     return {"answer": answer}
 
-# --- Alias for UI on /answer ---
-@app.post("/answer", response_model=AnswerResponse)
+@app.post(
+    "/answer",
+    response_model=AnswerResponse,
+    dependencies=[Depends(require_rag_token)]
+)
 async def alias_answer(req: AnswerRequest = Body(...)):
     return await api_answer(req)
 
-# --- /update_ticket endpoint ---
-class LogRequest(BaseModel):
-    ticketId:    str
-    finalAnswer: str
-
-@app.post("/update_ticket")
+@app.post(
+    "/update_ticket",
+    dependencies=[Depends(require_rag_token)]
+)
 async def update_ticket(log: LogRequest):
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
         await conn.execute(
@@ -334,7 +350,7 @@ async def update_ticket(log: LogRequest):
     await sync_mgr.queue()
     return {"status": "ok"}
 
-# --- Healthcheck endpoints ---
+# --- Healthcheck ---
 @app.head("/", include_in_schema=False)
 async def health_head():
     return JSONResponse(status_code=200, content=None)
@@ -343,11 +359,12 @@ async def health_head():
 async def health_get():
     return {"status": "ok"}
 
-# --- Startup & shutdown events ---
+# --- Startup & Shutdown ---
 @app.on_event("startup")
 async def on_startup():
     await download_db()
     await init_db()
+    # init_db_path fra app.api_search_helpers
     init_db_path(LOCAL_DB_PATH)
     try:
         await load_index_meta()
