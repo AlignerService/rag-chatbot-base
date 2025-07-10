@@ -159,7 +159,7 @@ sync_mgr = DropboxSyncManager()
 # --- Database init, schema + migrations ---
 async def init_db():
     async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # Create tickets table
+        # tickets
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS tickets (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,7 +171,7 @@ async def init_db():
                 created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         ''')
-        # Create ticket_threads table
+        # ticket_threads
         await conn.execute('''
             CREATE TABLE IF NOT EXISTS ticket_threads (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,7 +183,7 @@ async def init_db():
                 UNIQUE(ticket_id, created_time)
             );
         ''')
-        # Migrations (add missing columns if any)
+        # migrations
         cursor = await conn.execute("PRAGMA table_info(ticket_threads);")
         cols = {row[1] for row in await cursor.fetchall()}
         if 'contact_id' not in cols:
@@ -229,14 +229,14 @@ async def load_index_meta():
         logger.exception("Failed to load FAISS index/metadata")
         raise RuntimeError("Index load failed") from e
 
-# --- Include other routers ---
+# --- Include webhook router ---
 from app.webhook_integration import router as webhook_router
 app.include_router(webhook_router)
 
-# **Her er den RETTE import** af dine search helpers:
+# --- Import search helpers correctly ---
 from .api_search_helpers import init_db_path, get_ticket_history, get_customer_history
 
-# --- Request/Response Models ---
+# --- Models ---
 class AnswerRequest(BaseModel):
     ticketId:  str = Field(..., pattern=r'^[\w-]+$')
     contactId: str = Field(..., pattern=r'^[\w-]+$')
@@ -256,14 +256,70 @@ class LogRequest(BaseModel):
     ticketId:    str
     finalAnswer: str
 
-# --- API Endpoints ---
+# --- Endpoints ---
 @app.post(
     "/api/answer",
     response_model=AnswerResponse,
     dependencies=[Depends(require_rag_token)]
 )
 async def api_answer(req: AnswerRequest):
-    # ... resten af din api_answer uændret ...
+    global index, metadata
+    if index is None or metadata is None:
+        await load_index_meta()
+
+    ticket_hist = await get_ticket_history(req.ticketId)
+    count_and_log("TicketHistory", "\n".join(ticket_hist))
+
+    customer_hist = []
+    if num_tokens("\n".join(ticket_hist)) < 1000:
+        customer_hist = await get_customer_history(req.contactId, exclude_ticket_id=req.ticketId)
+    count_and_log("CustomerHistory", "\n".join(customer_hist))
+
+    emb = await async_client.embeddings.create(input=[req.question], model=EMBEDDING_MODEL)
+    q_vec = np.array(emb.data[0].embedding, dtype=np.float32).reshape(1, -1)
+    D, I = index.search(q_vec, 5)
+    rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
+    count_and_log("RAGChunks", "\n---\n".join(rag_chunks))
+
+    MAX_CTX = 3000
+    used, ctx = 0, []
+    for seg in ticket_hist + customer_hist + rag_chunks:
+        tok = num_tokens(seg)
+        if used + tok > MAX_CTX:
+            break
+        ctx.append(seg)
+        used += tok
+
+    parts = ["You are Dr. Helle Hatt from AlignerService, an experienced clinical advisor."]
+    if ticket_hist:
+        parts += ["Previous conversation (this ticket):"] + ticket_hist
+    if customer_hist:
+        parts += ["Previous conversation (other tickets):"] + customer_hist
+    parts += ["Contextual knowledge:"] + rag_chunks
+    parts += [f"Question: {req.question}", "Answer:"]
+    prompt = "\n\n".join(parts)
+
+    try:
+        chat = await async_client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=TEMPERATURE,
+            max_tokens=500
+        )
+        answer = chat.choices[0].message.content.strip()
+    except OpenAIError:
+        logger.exception("OpenAI call failed")
+        raise HTTPException(status_code=502, detail="OpenAI service error.")
+
+    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
+        await conn.execute(
+            "INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, 'RAG')",
+            (req.ticketId, req.contactId, req.question, answer)
+        )
+        await conn.commit()
+    await sync_mgr.queue()
+
+    return {"answer": answer}
 
 @app.post(
     "/answer",
@@ -278,7 +334,18 @@ async def alias_answer(req: AnswerRequest = Body(...)):
     dependencies=[Depends(require_rag_token)]
 )
 async def update_ticket(log: LogRequest):
-    # ... resten af update_ticket uændret ...
+    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
+        await conn.execute(
+            """
+            UPDATE tickets
+            SET answer = ?, source = 'FINAL', created_at = CURRENT_TIMESTAMP
+            WHERE ticket_id = ?
+            """,
+            (html.escape(log.finalAnswer), log.ticketId)
+        )
+        await conn.commit()
+    await sync_mgr.queue()
+    return {"status": "ok"}
 
 # --- Healthcheck ---
 @app.head("/", include_in_schema=False)
@@ -294,7 +361,7 @@ async def health_get():
 async def on_startup():
     await download_db()
     await init_db()
-    init_db_path(LOCAL_DB_PATH)   # <<<<<< Her kalder vi nu den relative import
+    init_db_path(LOCAL_DB_PATH)
     try:
         await load_index_meta()
     except RuntimeError:
