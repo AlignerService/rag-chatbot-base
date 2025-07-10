@@ -233,6 +233,9 @@ async def load_index_meta():
 from app.webhook_integration import router as webhook_router
 app.include_router(webhook_router)
 
+# **Her er den RETTE import** af dine search helpers:
+from .api_search_helpers import init_db_path, get_ticket_history, get_customer_history
+
 # --- Request/Response Models ---
 class AnswerRequest(BaseModel):
     ticketId:  str = Field(..., pattern=r'^[\w-]+$')
@@ -260,69 +263,7 @@ class LogRequest(BaseModel):
     dependencies=[Depends(require_rag_token)]
 )
 async def api_answer(req: AnswerRequest):
-    global index, metadata
-    if index is None or metadata is None:
-        await load_index_meta()
-
-    # History
-    ticket_hist = await get_ticket_history(req.ticketId)
-    count_and_log("TicketHistory", "\n".join(ticket_hist))
-
-    customer_hist = []
-    if num_tokens("\n".join(ticket_hist)) < 1000:
-        customer_hist = await get_customer_history(req.contactId, exclude_ticket_id=req.ticketId)
-    count_and_log("CustomerHistory", "\n".join(customer_hist))
-
-    # RAG search
-    emb = await async_client.embeddings.create(input=[req.question], model=EMBEDDING_MODEL)
-    q_vec = np.array(emb.data[0].embedding, dtype=np.float32).reshape(1, -1)
-    D, I = index.search(q_vec, 5)
-    rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
-    count_and_log("RAGChunks", "\n---\n".join(rag_chunks))
-
-    # Build context
-    MAX_CTX = 3000
-    used, ctx = 0, []
-    for seg in ticket_hist + customer_hist + rag_chunks:
-        tok = num_tokens(seg)
-        if used + tok > MAX_CTX:
-            break
-        ctx.append(seg)
-        used += tok
-
-    # Build prompt
-    parts = ["You are Dr. Helle Hatt from AlignerService, an experienced clinical advisor."]
-    if ticket_hist:
-        parts += ["Previous conversation (this ticket):"] + ticket_hist
-    if customer_hist:
-        parts += ["Previous conversation (other tickets):"] + customer_hist
-    parts += ["Contextual knowledge:"] + rag_chunks
-    parts += [f"Question: {req.question}", "Answer:"]
-    prompt = "\n\n".join(parts)
-
-    # Call OpenAI
-    try:
-        chat = await async_client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=TEMPERATURE,
-            max_tokens=500
-        )
-        answer = chat.choices[0].message.content.strip()
-    except OpenAIError:
-        logger.exception("OpenAI call failed")
-        raise HTTPException(status_code=502, detail="OpenAI service error. Please try again later.")
-
-    # Store answer
-    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        await conn.execute(
-            "INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, 'RAG')",
-            (req.ticketId, req.contactId, req.question, answer)
-        )
-        await conn.commit()
-    await sync_mgr.queue()
-
-    return {"answer": answer}
+    # ... resten af din api_answer uændret ...
 
 @app.post(
     "/answer",
@@ -337,18 +278,7 @@ async def alias_answer(req: AnswerRequest = Body(...)):
     dependencies=[Depends(require_rag_token)]
 )
 async def update_ticket(log: LogRequest):
-    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        await conn.execute(
-            """
-            UPDATE tickets
-            SET answer = ?, source = 'FINAL', created_at = CURRENT_TIMESTAMP
-            WHERE ticket_id = ?
-            """,
-            (html.escape(log.finalAnswer), log.ticketId)
-        )
-        await conn.commit()
-    await sync_mgr.queue()
-    return {"status": "ok"}
+    # ... resten af update_ticket uændret ...
 
 # --- Healthcheck ---
 @app.head("/", include_in_schema=False)
@@ -364,8 +294,7 @@ async def health_get():
 async def on_startup():
     await download_db()
     await init_db()
-    # init_db_path fra app.api_search_helpers
-    init_db_path(LOCAL_DB_PATH)
+    init_db_path(LOCAL_DB_PATH)   # <<<<<< Her kalder vi nu den relative import
     try:
         await load_index_meta()
     except RuntimeError:
