@@ -4,6 +4,7 @@ import logging
 import asyncio
 import time
 import html
+import hmac
 from datetime import datetime
 
 import numpy as np
@@ -12,7 +13,7 @@ import dropbox
 import tiktoken
 import aiohttp
 import aiosqlite
-from fastapi import FastAPI, HTTPException, Body, Depends
+from fastapi import FastAPI, HTTPException, Body, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -53,17 +54,17 @@ LOCAL_DB_PATH         = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 INDEX_FILE           = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 METADATA_FILE        = os.getenv("METADATA_FILE", "metadata.json")
 
-RAG_BEARER_TOKEN     = os.getenv("RAG_BEARER_TOKEN")
+RAG_BEARER_TOKEN     = os.getenv("RAG_BEARER_TOKEN", "")
 
 # --- FastAPI app ---
 app = FastAPI()
 
-# --- CORS Middleware ---
+# --- CORS Middleware (strammet til ZoHo) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["https://desk.zoho.eu"],
+    allow_methods=["POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # --- Security (Bearer token) ---
@@ -72,8 +73,16 @@ bearer_scheme = HTTPBearer()
 def require_rag_token(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
 ):
-    if credentials.scheme.lower() != "bearer" or credentials.credentials != RAG_BEARER_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid or missing RAG token")
+    if credentials.scheme.lower() != "bearer":
+        logger.info("Auth failed: missing Bearer scheme")
+        raise HTTPException(status_code=403, detail="Invalid or missing RAG token")
+    incoming = credentials.credentials.strip()
+    expected = RAG_BEARER_TOKEN.strip()
+    logger.info(f"Incoming startswith: {incoming[:4]}..., expected startswith: {expected[:4]}...")
+    if not hmac.compare_digest(incoming, expected):
+        logger.info("Auth failed: token mismatch")
+        raise HTTPException(status_code=403, detail="Invalid or missing RAG token")
+    logger.info("Auth succeeded")
     return True
 
 # --- OpenAI clients ---
@@ -256,6 +265,12 @@ class LogRequest(BaseModel):
     ticketId:    str
     finalAnswer: str
 
+# --- Debug endpoint (midlertidig, fjern når I har verificeret headeren) ---
+@app.post("/debug-token")
+async def debug_token(request: Request):
+    auth_header = request.headers.get("authorization")
+    return JSONResponse({"received_authorization": auth_header})
+
 # --- Endpoints ---
 @app.post(
     "/api/answer",
@@ -359,6 +374,12 @@ async def health_get():
 # --- Startup & Shutdown ---
 @app.on_event("startup")
 async def on_startup():
+    # Startup check for token presence
+    if RAG_BEARER_TOKEN:
+        logger.info("RAG_BEARER_TOKEN is set (value hidden)")
+    else:
+        logger.error("RAG_BEARER_TOKEN is missing!")
+
     await download_db()
     await init_db()
     init_db_path(LOCAL_DB_PATH)
