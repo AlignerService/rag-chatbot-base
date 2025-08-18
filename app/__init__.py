@@ -4,6 +4,7 @@ import json
 import logging
 import asyncio
 import hmac
+import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -211,6 +212,76 @@ async def init_db():
         _SQLITE_OK = False
         logger.exception(f"SQLite check failed: {e}")
 
+def _strip_html(text: str) -> str:
+    """Meget enkel HTML-stripper, så keywords matcher bedre."""
+    if not text:
+        return ""
+    # Fjern tags
+    text = re.sub(r"<[^>]+>", " ", text)
+    # Komprimer whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+def _extract_text_from_meta(item: Any) -> str:
+    """
+    Ekstraher tekst robust fra forskellige metadata-formater.
+    - Prøver en række gængse feltnavne
+    - Leder også i simple nested dicts
+    - Kan samle lister af strenge
+    - Fallback: samler alle strengværdier i dict'en
+    """
+    if item is None:
+        return ""
+
+    # Direkte str
+    if isinstance(item, str):
+        return item
+
+    # Liste af strenge eller mixed -> join
+    if isinstance(item, list):
+        parts = []
+        for v in item:
+            if isinstance(v, str):
+                parts.append(v)
+            elif isinstance(v, dict):
+                nested = _extract_text_from_meta(v)
+                if nested:
+                    parts.append(nested)
+        return "\n".join(parts).strip()
+
+    # Dict: prøv prioriterede felter
+    if isinstance(item, dict):
+        candidates = [
+            "text", "content", "chunk_text", "chunk", "page_text", "pageContent",
+            "page_content", "body", "raw_text", "text_content", "md", "markdown",
+            "html", "document_text", "passage", "excerpt", "summary", "data",
+            "value", "message"
+        ]
+        for key in candidates:
+            if key in item:
+                val = item.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val
+                # Hvis feltet er nested dict/list – prøv at trække tekst ud
+                if isinstance(val, (dict, list)):
+                    nested = _extract_text_from_meta(val)
+                    if nested:
+                        return nested
+
+        # Fallback: join ALLE streng-værdier i dict'en (kun top-level + simple nested)
+        flat_strings = []
+        for v in item.values():
+            if isinstance(v, str):
+                flat_strings.append(v)
+            elif isinstance(v, (dict, list)):
+                nested = _extract_text_from_meta(v)
+                if nested:
+                    flat_strings.append(nested)
+        if flat_strings:
+            return "\n".join(flat_strings).strip()
+
+    return ""
+
 def _keyword_score(text: str, query: str) -> int:
     """
     Very simple keyword overlap score. Replace with your vector similarity if needed.
@@ -223,27 +294,36 @@ def _keyword_score(text: str, query: str) -> int:
 
 async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
     """
-    Minimal retrieval:
-    - If metadata.json exists, return top-k by naive keyword score from 'text' field.
-    - If not, return empty list (the model will still use user_text to answer).
+    Tolerant retrieval:
+    - Prøver mange feltnavne i metadata for at finde tekst
+    - Stripper simpel HTML
+    - Returnerer top-k baseret på naiv keyword-score
     """
     if not _METADATA:
+        logger.info("No metadata loaded; returning empty retrieval result.")
         return []
 
+    q = (query or "").strip()
     scored = []
+
     for item in _METADATA:
-        text = ""
-        if isinstance(item, dict):
-            text = item.get("text") or item.get("content") or ""
-        else:
-            text = str(item)
-        score = _keyword_score(text, query)
+        text = _extract_text_from_meta(item)
+        text = _strip_html(text)
+        if not text:
+            continue
+
+        score = _keyword_score(text, q)
         if score > 0:
             scored.append((score, text, item))
 
+    # Hvis intet fik score > 0, returnér tomt (undgå at fylde modellen med irrelevant kontekst)
+    if not scored:
+        logger.info("No positive keyword matches in metadata for this query.")
+        return []
+
     scored.sort(key=lambda x: x[0], reverse=True)
-    top = [ {"text": s[1], "meta": s[2]} for s in scored[:k] ]
-    logger.info(f"Retrieved chunks: {len(top)}")
+    top = [{"text": s[1], "meta": s[2]} for s in scored[:k]]
+    logger.info(f"Retrieved chunks: {len(top)} (from {len(_METADATA)} metadata items)")
     return top
 
 # ------------ OpenAI call (async wrapper) ------------
