@@ -6,7 +6,7 @@ import asyncio
 import hmac
 import re
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 
 import numpy as np  # optional
 try:
@@ -41,9 +41,14 @@ RAG_BEARER_TOKEN   = os.getenv("RAG_BEARER_TOKEN", "")
 OPENAI_MODEL       = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
 
-# Dropbox (optional – for pulling SQLite)
-DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN", "")
-DROPBOX_DB_PATH      = os.getenv("DROPBOX_DB_PATH", "")  # e.g. "/Apps/AlignerService/rag.sqlite3"
+# -------- Dropbox creds (both modes supported) --------
+DROPBOX_ACCESS_TOKEN  = os.getenv("DROPBOX_ACCESS_TOKEN", "")     # simple, short-lived token (or long-lived in dev)
+DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH", "")          # e.g. "/Apps/AlignerService/rag.sqlite3"
+
+# Refresh-token flow (matches your Render variables)
+DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID", "")
+DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET", "")
+DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
 
 # Globals
 _FAISS_INDEX = None
@@ -94,7 +99,7 @@ async def on_startup():
         pass
 
     try:
-        await download_db()  # pulls SQLite from Dropbox if configured
+        await download_db()  # pulls SQLite from Dropbox (access token OR refresh flow)
         await init_db()      # loads FAISS, metadata.json, verifies SQLite
         logger.info("RAG startup complete")
     except Exception as e:
@@ -278,25 +283,50 @@ def make_system_prompt(lang: str, role: str) -> str:
     )
 
 # =========================
-# Dropbox download (optional)
+# Dropbox download (access token OR refresh flow)
 # =========================
 async def download_db():
     """
-    If DROPBOX_ACCESS_TOKEN and DROPBOX_DB_PATH are set, download the SQLite file to LOCAL_DB_PATH.
+    Download SQLite from Dropbox to LOCAL_DB_PATH.
+    Supports:
+      - DROPBOX_ACCESS_TOKEN (simple)
+      - OR refresh flow with DROPBOX_CLIENT_ID + DROPBOX_CLIENT_SECRET + DROPBOX_REFRESH_TOKEN
+    Requires DROPBOX_DB_PATH (e.g. "/Apps/AlignerService/rag.sqlite3" or "/rag.sqlite3" for App Folder apps).
     """
-    if not (DROPBOX_ACCESS_TOKEN and DROPBOX_DB_PATH):
-        logger.info("download_db(): no-op (Dropbox not configured)")
+    if not DROPBOX_DB_PATH:
+        logger.info("download_db(): no-op (DROPBOX_DB_PATH not set)")
         return
+
     try:
         import dropbox  # type: ignore
     except Exception as e:
         logger.warning(f"Dropbox SDK not available ({e}); skipping DB download.")
         return
+
     try:
-        dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
-        # Download (overwrite)
-        dbx.files_download_to_file(LOCAL_DB_PATH, DROPBOX_DB_PATH)
-        logger.info(f"Downloaded SQLite from Dropbox to {LOCAL_DB_PATH}")
+        # Choose auth mode
+        if DROPBOX_ACCESS_TOKEN:
+            dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
+        elif DROPBOX_REFRESH_TOKEN and DROPBOX_CLIENT_ID and DROPBOX_CLIENT_SECRET:
+            dbx = dropbox.Dropbox(
+                oauth2_refresh_token=DROPBOX_REFRESH_TOKEN,
+                app_key=DROPBOX_CLIENT_ID,
+                app_secret=DROPBOX_CLIENT_SECRET,
+            )
+        else:
+            logger.warning("Dropbox credentials missing: set either DROPBOX_ACCESS_TOKEN or (DROPBOX_CLIENT_ID, DROPBOX_CLIENT_SECRET, DROPBOX_REFRESH_TOKEN).")
+            return
+
+        # Normalize path
+        dbx_path = DROPBOX_DB_PATH if DROPBOX_DB_PATH.startswith("/") else f"/{DROPBOX_DB_PATH}"
+
+        # Ensure local dir exists
+        local_dir = os.path.dirname(LOCAL_DB_PATH)
+        if local_dir:
+            os.makedirs(local_dir, exist_ok=True)
+
+        dbx.files_download_to_file(LOCAL_DB_PATH, dbx_path)
+        logger.info(f"Downloaded SQLite from Dropbox path '{dbx_path}' to {LOCAL_DB_PATH}")
     except Exception as e:
         logger.exception(f"Dropbox download failed: {e}")
 
@@ -415,7 +445,6 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
                                 if best_time is None:
                                     best_text, best_time = txt, tval
                                 else:
-                                    # if both have time, pick newer; else prefer non-empty
                                     if tval and (not best_time or str(tval) > str(best_time)):
                                         best_text, best_time = txt, tval
                                     elif not best_text:
@@ -638,13 +667,12 @@ async def api_answer(request: Request):
 
     logger.info(f"Incoming body keys: {list(body.keys()) if isinstance(body, dict) else type(body)}")
 
-    # 2) Extract Zoho-style IDs first (your preferred flow)
+    # 2) Extract Zoho-style IDs first (preferred flow)
     user_text = ""
     ticket_id = None
     contact_id = None
 
     if isinstance(body, dict):
-        # Zoho ID-only mode
         if "ticketId" in body and "question" in body:
             ticket_id = str(body.get("ticketId") or "").strip()
             contact_id = str(body.get("contactId") or "").strip() if body.get("contactId") else None
@@ -654,9 +682,9 @@ async def api_answer(request: Request):
                 user_text = txt
                 logger.info("Zoho ID-only: pulled latest thread from SQLite.")
             else:
-                # fallback to the question text (can be instruction-like)
                 user_text = str(body.get("question") or "").strip()
                 logger.info("Zoho ID-only: SQLite empty; using 'question' field.")
+
         # classic fields (optional)
         if not user_text:
             for key_guess in ["plainText", "text", "message", "content", "body"]:
@@ -719,16 +747,16 @@ async def api_answer(request: Request):
             ),
         }
         sources = []
-        result = {
+        return {
             "finalAnswer": safe_generic.get(lang, safe_generic["en"]),
             "language": lang,
             "role": role_disp,
             "sources": sources,
             "ticketId": ticket_id,
             "timestamp": datetime.utcnow().isoformat() + "Z",
+            # Zoho-friendly alias:
             "message": {"content": safe_generic.get(lang, safe_generic["en"]), "language": lang}
         }
-        return result
 
     context = "\n\n".join(ch.get("text", "") if isinstance(ch, dict) else str(ch) for ch in top_chunks)[:8000]
 
@@ -763,7 +791,7 @@ async def api_answer(request: Request):
         url = meta.get("url") if isinstance(meta, dict) else None
         sources.append({"label": label, "url": url})
 
-    result = {
+    return {
         "finalAnswer": answer,
         "language": lang,
         "role": role_disp,
@@ -773,4 +801,3 @@ async def api_answer(request: Request):
         # Zoho-friendly alias
         "message": {"content": answer, "language": lang}
     }
-    return result
