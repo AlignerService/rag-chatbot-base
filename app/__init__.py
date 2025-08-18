@@ -1,64 +1,62 @@
+# app/__init__.py
 import os
 import json
 import logging
 import asyncio
-import time
-import html
+import hmac
 from datetime import datetime
+from typing import List, Dict, Any, Optional
 
-import numpy as np
-import faiss
-import dropbox
-import tiktoken
+import numpy as np  # optional, used if you later expand retrieval
+# Optional imports: we keep them but guard usage so the app still runs if missing
+try:
+    import faiss  # type: ignore
+except Exception:
+    faiss = None  # Safe fallback
+
+try:
+    import tiktoken  # type: ignore
+except Exception:
+    tiktoken = None  # Safe fallback
+
 import aiohttp
 import aiosqlite
-from fastapi import FastAPI, HTTPException, Body, Depends
+
+from fastapi import FastAPI, HTTPException, Body, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, Field, validator
-from openai import OpenAI, AsyncOpenAI, OpenAIError
-from dotenv import load_dotenv
 
-# --- Load environment variables ---
-load_dotenv()
+# =========================
+# Logging & Configuration
+# =========================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
+logger = logging.getLogger("rag-app")
 
-# --- Logging ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+FAISS_INDEX_FILE  = os.getenv("FAISS_INDEX_FILE", "faiss.index")
+METADATA_FILE     = os.getenv("METADATA_FILE", "metadata.json")
+LOCAL_DB_PATH     = os.getenv("LOCAL_DB_PATH", "/mnt/data/rag.sqlite3")
 
-# --- Required env vars ---
-required = [
-    "OPENAI_API_KEY",
-    "DROPBOX_CLIENT_ID", "DROPBOX_CLIENT_SECRET", "DROPBOX_REFRESH_TOKEN", "DROPBOX_DB_PATH",
-    "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN",
-    "RAG_BEARER_TOKEN",
-]
-missing = [v for v in required if not os.getenv(v)]
-if missing:
-    raise RuntimeError(f"Missing required env vars: {missing}")
+# IMPORTANT: default to empty string, so comparisons are stable
+RAG_BEARER_TOKEN  = os.getenv("RAG_BEARER_TOKEN", "")
 
-# --- Settings ---
-OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY")
-EMBEDDING_MODEL      = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")
-CHAT_MODEL           = os.getenv("OPENAI_CHAT_MODEL", "gpt-4")
-TEMPERATURE          = float(os.getenv("OPENAI_TEMPERATURE", 0.2))
+OPENAI_MODEL      = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
 
-DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID")
-DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET")
-DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
-DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH")
-LOCAL_DB_PATH         = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
+# Globals for initialized resources
+_FAISS_INDEX = None
+_METADATA: List[Dict[str, Any]] = []
+_SQLITE_OK = False
 
-INDEX_FILE           = os.getenv("FAISS_INDEX_FILE", "faiss.index")
-METADATA_FILE        = os.getenv("METADATA_FILE", "metadata.json")
-
-RAG_BEARER_TOKEN     = os.getenv("RAG_BEARER_TOKEN")
-
-# --- FastAPI app ---
+# =========================
+# FastAPI App & CORS
+# =========================
 app = FastAPI()
 
-# --- CORS Middleware ---
+# Permissive for debugging; tighten (e.g. to ZoHo domains) in production
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -66,309 +64,324 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Security (Bearer token) ---
-bearer_scheme = HTTPBearer()
+# =========================
+# Security (Bearer token)
+# =========================
+bearer_scheme = HTTPBearer(auto_error=True)
 
-def require_rag_token(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-):
-    if credentials.scheme.lower() != "bearer" or credentials.credentials != RAG_BEARER_TOKEN:
-        raise HTTPException(status_code=401, detail="Invalid or missing RAG token")
+def require_rag_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    if credentials.scheme.lower() != "bearer":
+        logger.info("Auth failed: missing Bearer scheme")
+        raise HTTPException(status_code=403, detail="Invalid or missing RAG token")
+
+    incoming = (credentials.credentials or "").strip()
+    expected = (RAG_BEARER_TOKEN or "").strip()
+
+    if not expected:
+        logger.error("Auth failed: server RAG_BEARER_TOKEN not set")
+        raise HTTPException(status_code=403, detail="Server token not configured")
+
+    # Constant-time compare
+    if not hmac.compare_digest(incoming, expected):
+        logger.info("Auth failed: token mismatch")
+        raise HTTPException(status_code=403, detail="Invalid or missing RAG token")
+
     return True
 
-# --- OpenAI clients ---
-client       = OpenAI(api_key=OPENAI_API_KEY)
-async_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-
-# --- Tokenizer ---
-tokenizer = tiktoken.get_encoding("cl100k_base")
-def num_tokens(text: str) -> int:
-    return len(tokenizer.encode(text))
-def count_and_log(name: str, text: str) -> int:
-    toks = num_tokens(text)
-    logger.info(f"[TokenUsage] {name}: {toks} tokens")
-    return toks
-
-# --- Dropbox Token Manager ---
-class AsyncDropboxTokenManager:
-    def __init__(self, client_id, client_secret, refresh_token):
-        self.client_id     = client_id
-        self.client_secret = client_secret
-        self.refresh_token = refresh_token
-        self.access_token  = None
-        self.expires_at    = 0
-        self._lock         = asyncio.Lock()
-
-    async def get_access_token(self):
-        async with self._lock:
-            if not self.access_token or time.time() >= self.expires_at:
-                await self._refresh()
-            return self.access_token
-
-    async def _refresh(self):
-        url = "https://api.dropbox.com/oauth2/token"
-        data = {
-            "grant_type":    "refresh_token",
-            "refresh_token": self.refresh_token,
-            "client_id":     self.client_id,
-            "client_secret": self.client_secret,
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=data) as resp:
-                resp.raise_for_status()
-                tk = await resp.json()
-                self.access_token = tk["access_token"]
-                self.expires_at   = time.time() + tk.get("expires_in", 14400) - 60
-                logger.info("Refreshed Dropbox token")
-
-dropbox_token_mgr = AsyncDropboxTokenManager(
-    DROPBOX_CLIENT_ID, DROPBOX_CLIENT_SECRET, DROPBOX_REFRESH_TOKEN
-)
-
-async def get_dropbox_client():
-    token = await dropbox_token_mgr.get_access_token()
-    return dropbox.Dropbox(token)
-
-# --- Dropbox Sync Manager ---
-class DropboxSyncManager:
-    def __init__(self):
-        self._lock = asyncio.Lock()
-        self._task = None
-
-    async def queue(self):
-        async with self._lock:
-            if not self._task or self._task.done():
-                self._task = asyncio.create_task(self._upload())
-
-    async def _upload(self):
-        try:
-            dbx = await get_dropbox_client()
-            data = await asyncio.to_thread(lambda: open(LOCAL_DB_PATH, 'rb').read())
-            await asyncio.to_thread(
-                dbx.files_upload,
-                data,
-                DROPBOX_DB_PATH,
-                mode=dropbox.files.WriteMode.overwrite
-            )
-            logger.info("Uploaded DB to Dropbox")
-        except Exception:
-            logger.exception("Dropbox upload failed")
-
-sync_mgr = DropboxSyncManager()
-
-# --- Database init, schema + migrations ---
-async def init_db():
-    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        # tickets
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS tickets (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                ticket_id    TEXT,
-                contact_id   TEXT,
-                question     TEXT,
-                answer       TEXT,
-                source       TEXT,
-                created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        ''')
-        # ticket_threads
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS ticket_threads (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                ticket_id     TEXT,
-                contact_id    TEXT,
-                sender        TEXT,
-                content       TEXT,
-                created_time  TEXT,
-                UNIQUE(ticket_id, created_time)
-            );
-        ''')
-        # migrations
-        cursor = await conn.execute("PRAGMA table_info(ticket_threads);")
-        cols = {row[1] for row in await cursor.fetchall()}
-        if 'contact_id' not in cols:
-            await conn.execute("ALTER TABLE ticket_threads ADD COLUMN contact_id TEXT;")
-            logger.info("Migrated ticket_threads: added contact_id")
-        if 'created_time' not in cols:
-            await conn.execute("ALTER TABLE ticket_threads ADD COLUMN created_time TEXT;")
-            logger.info("Migrated ticket_threads: added created_time")
-        cursor = await conn.execute("PRAGMA table_info(tickets);")
-        cols = {row[1] for row in await cursor.fetchall()}
-        if 'contact_id' not in cols:
-            await conn.execute("ALTER TABLE tickets ADD COLUMN contact_id TEXT;")
-            logger.info("Migrated tickets: added contact_id")
-        if 'source' not in cols:
-            await conn.execute("ALTER TABLE tickets ADD COLUMN source TEXT;")
-            logger.info("Migrated tickets: added source")
-        if 'created_at' not in cols:
-            await conn.execute("ALTER TABLE tickets ADD COLUMN created_at TIMESTAMP;")
-            logger.info("Migrated tickets: added created_at")
-        await conn.commit()
-        logger.info("DB initialized (with migrations)")
-
-# --- Download DB from Dropbox ---
-async def download_db():
-    try:
-        dbx = await get_dropbox_client()
-        md, res = await asyncio.to_thread(dbx.files_download, DROPBOX_DB_PATH)
-        await asyncio.to_thread(lambda: open(LOCAL_DB_PATH, 'wb').write(res.content))
-        logger.info("Downloaded DB from Dropbox")
-    except Exception:
-        logger.exception("Failed to download DB")
-
-# --- Lazy load FAISS & metadata ---
-index = None
-metadata = None
-async def load_index_meta():
-    global index, metadata
-    try:
-        index = await asyncio.to_thread(faiss.read_index, INDEX_FILE)
-        metadata = await asyncio.to_thread(lambda: json.load(open(METADATA_FILE, 'r', encoding='utf-8')))
-        logger.info("Loaded FAISS index and metadata")
-    except Exception as e:
-        logger.exception("Failed to load FAISS index/metadata")
-        raise RuntimeError("Index load failed") from e
-
-# --- Include webhook router ---
-from app.webhook_integration import router as webhook_router
-app.include_router(webhook_router)
-
-# --- Import search helpers correctly ---
-from .api_search_helpers import init_db_path, get_ticket_history, get_customer_history
-
-# --- Models ---
-class AnswerRequest(BaseModel):
-    ticketId:  str = Field(..., pattern=r'^[\w-]+$')
-    contactId: str = Field(..., pattern=r'^[\w-]+$')
-    question:  str
-
-    @validator('question')
-    def nonempty(cls, v):
-        v = v.strip()
-        if not v:
-            raise ValueError('Question must not be empty')
-        return html.escape(v)
-
-class AnswerResponse(BaseModel):
-    answer: str
-
-class LogRequest(BaseModel):
-    ticketId:    str
-    finalAnswer: str
-
-# --- Endpoints ---
-@app.post(
-    "/api/answer",
-    response_model=AnswerResponse,
-    dependencies=[Depends(require_rag_token)]
-)
-async def api_answer(req: AnswerRequest):
-    global index, metadata
-    if index is None or metadata is None:
-        await load_index_meta()
-
-    ticket_hist = await get_ticket_history(req.ticketId)
-    count_and_log("TicketHistory", "\n".join(ticket_hist))
-
-    customer_hist = []
-    if num_tokens("\n".join(ticket_hist)) < 1000:
-        customer_hist = await get_customer_history(req.contactId, exclude_ticket_id=req.ticketId)
-    count_and_log("CustomerHistory", "\n".join(customer_hist))
-
-    emb = await async_client.embeddings.create(input=[req.question], model=EMBEDDING_MODEL)
-    q_vec = np.array(emb.data[0].embedding, dtype=np.float32).reshape(1, -1)
-    D, I = index.search(q_vec, 5)
-    rag_chunks = [metadata[i]['text'] for i in I[0] if i < len(metadata)]
-    count_and_log("RAGChunks", "\n---\n".join(rag_chunks))
-
-    MAX_CTX = 3000
-    used, ctx = 0, []
-    for seg in ticket_hist + customer_hist + rag_chunks:
-        tok = num_tokens(seg)
-        if used + tok > MAX_CTX:
-            break
-        ctx.append(seg)
-        used += tok
-
-    parts = ["You are Dr. Helle Hatt from AlignerService, an experienced clinical advisor."]
-    if ticket_hist:
-        parts += ["Previous conversation (this ticket):"] + ticket_hist
-    if customer_hist:
-        parts += ["Previous conversation (other tickets):"] + customer_hist
-    parts += ["Contextual knowledge:"] + rag_chunks
-    parts += [f"Question: {req.question}", "Answer:"]
-    prompt = "\n\n".join(parts)
-
-    try:
-        chat = await async_client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=TEMPERATURE,
-            max_tokens=500
-        )
-        answer = chat.choices[0].message.content.strip()
-    except OpenAIError:
-        logger.exception("OpenAI call failed")
-        raise HTTPException(status_code=502, detail="OpenAI service error.")
-
-    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        await conn.execute(
-            "INSERT INTO tickets (ticket_id, contact_id, question, answer, source) VALUES (?, ?, ?, ?, 'RAG')",
-            (req.ticketId, req.contactId, req.question, answer)
-        )
-        await conn.commit()
-    await sync_mgr.queue()
-
-    return {"answer": answer}
-
-@app.post(
-    "/answer",
-    response_model=AnswerResponse,
-    dependencies=[Depends(require_rag_token)]
-)
-async def alias_answer(req: AnswerRequest = Body(...)):
-    return await api_answer(req)
-
-@app.post(
-    "/update_ticket",
-    dependencies=[Depends(require_rag_token)]
-)
-async def update_ticket(log: LogRequest):
-    async with aiosqlite.connect(LOCAL_DB_PATH) as conn:
-        await conn.execute(
-            """
-            UPDATE tickets
-            SET answer = ?, source = 'FINAL', created_at = CURRENT_TIMESTAMP
-            WHERE ticket_id = ?
-            """,
-            (html.escape(log.finalAnswer), log.ticketId)
-        )
-        await conn.commit()
-    await sync_mgr.queue()
-    return {"status": "ok"}
-
-# --- Healthcheck ---
-@app.head("/", include_in_schema=False)
-async def health_head():
-    return JSONResponse(status_code=200, content=None)
-
-@app.get("/", include_in_schema=False)
-async def health_get():
-    return {"status": "ok"}
-
-# --- Startup & Shutdown ---
+# =========================
+# Startup / Shutdown
+# =========================
 @app.on_event("startup")
 async def on_startup():
-    await download_db()
-    await init_db()
-    init_db_path(LOCAL_DB_PATH)
-    try:
-        await load_index_meta()
-    except RuntimeError:
-        pass
-    logger.info("Startup complete")
+    if RAG_BEARER_TOKEN:
+        logger.info("RAG_BEARER_TOKEN is set (value hidden)")
+    else:
+        logger.error("RAG_BEARER_TOKEN is missing!")
 
-@app.on_event("shutdown")
-async def on_shutdown():
-    await sync_mgr.queue()
-    await asyncio.sleep(2)
+    # Ensure local dir for DB path (if applicable)
+    try:
+        base = os.path.dirname(LOCAL_DB_PATH)
+        if base:
+            os.makedirs(base, exist_ok=True)
+    except Exception:
+        pass
+
+    try:
+        await download_db()
+        await init_db()
+        logger.info("RAG startup complete")
+    except Exception as e:
+        logger.exception(f"Startup failed: {e}")
+
+# =========================
+# Utilities
+# =========================
+def detect_language(text: str) -> str:
+    """
+    Very simple heuristic: 'da' for Danish if signals present; otherwise 'en'.
+    No external dependencies.
+    """
+    if not text:
+        return "en"
+    lowered = text.lower()
+
+    # Special Danish chars
+    if any(ch in lowered for ch in ["æ", "ø", "å"]):
+        return "da"
+
+    # Common Danish words/signals
+    dk_signals = [
+        " og ", " jeg ", " ikke", " det ", " der ", " som ", " har ", " skal ",
+        " hvad", " hvordan", " hvorfor", " måske", " fordi", " gerne", " tak",
+        " hej ", " kære "
+    ]
+    score = sum(1 for w in dk_signals if w in lowered)
+    return "da" if score >= 2 else "en"
+
+
+def make_system_prompt(lang: str) -> str:
+    if lang == "da":
+        return (
+            "Du er en hjælpsom assistent for AlignerService. "
+            "Svar præcist og kortfattet på dansk. "
+            "Hvis du henviser til interne dokumenter, hold det neutralt og faktuelt."
+        )
+    else:
+        return (
+            "You are a helpful assistant for AlignerService. "
+            "Answer precisely and concisely in English. "
+            "If you refer to internal documents, keep it neutral and factual."
+        )
+
+# =========================
+# Minimal RAG Core (safe fallbacks)
+# Replace with your existing implementations if you have them.
+# =========================
+
+async def download_db():
+    """
+    OPTIONAL: Pull SQLite or index files from cloud storage.
+    This function is a no-op by default, but kept async and logged.
+    """
+    logger.info("download_db(): no-op (override if you pull from cloud)")
+
+async def init_db():
+    """
+    Initialize FAISS / load metadata / open SQLite.
+    - Loads FAISS index if present
+    - Loads metadata.json if present
+    - Opens SQLite for future use (optional)
+    """
+    global _FAISS_INDEX, _METADATA, _SQLITE_OK
+
+    # Load FAISS index if available
+    if faiss is not None and os.path.exists(FAISS_INDEX_FILE):
+        try:
+            _FAISS_INDEX = faiss.read_index(FAISS_INDEX_FILE)
+            logger.info(f"Loaded FAISS index from {FAISS_INDEX_FILE}")
+        except Exception as e:
+            logger.exception(f"Failed to load FAISS index: {e}")
+            _FAISS_INDEX = None
+    else:
+        logger.info("FAISS not available or index file missing; continuing without FAISS.")
+
+    # Load metadata.json if available
+    if os.path.exists(METADATA_FILE):
+        try:
+            with open(METADATA_FILE, "r", encoding="utf-8") as f:
+                _METADATA = json.load(f)
+            logger.info(f"Loaded metadata with {len(_METADATA)} entries from {METADATA_FILE}")
+        except Exception as e:
+            logger.exception(f"Failed to load metadata: {e}")
+            _METADATA = []
+    else:
+        logger.info("No metadata.json found; continuing without metadata context.")
+
+    # Try opening SQLite (optional)
+    try:
+        if os.path.exists(LOCAL_DB_PATH):
+            async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+                await db.execute("SELECT 1")
+            _SQLITE_OK = True
+            logger.info(f"SQLite available at {LOCAL_DB_PATH}")
+        else:
+            _SQLITE_OK = False
+            logger.info(f"SQLite path not found: {LOCAL_DB_PATH} (continuing)")
+    except Exception as e:
+        _SQLITE_OK = False
+        logger.exception(f"SQLite check failed: {e}")
+
+def _keyword_score(text: str, query: str) -> int:
+    """
+    Very simple keyword overlap score. Replace with your vector similarity if needed.
+    """
+    if not text or not query:
+        return 0
+    t = text.lower()
+    q_tokens = [tok for tok in query.lower().split() if len(tok) > 2]
+    return sum(1 for tok in q_tokens if tok in t)
+
+async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
+    """
+    Minimal retrieval:
+    - If metadata.json exists, return top-k by naive keyword score from 'text' field.
+    - If not, return empty list (the model will still use user_text to answer).
+    """
+    if not _METADATA:
+        return []
+
+    scored = []
+    for item in _METADATA:
+        text = ""
+        if isinstance(item, dict):
+            text = item.get("text") or item.get("content") or ""
+        else:
+            text = str(item)
+        score = _keyword_score(text, query)
+        if score > 0:
+            scored.append((score, text, item))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = [ {"text": s[1], "meta": s[2]} for s in scored[:k] ]
+    logger.info(f"Retrieved chunks: {len(top)}")
+    return top
+
+# ------------ OpenAI call (async wrapper) ------------
+async def get_rag_answer(final_prompt: str) -> str:
+    """
+    Calls OpenAI Chat Completions using either the modern client or legacy, whichever is available.
+    Runs in a thread executor to avoid blocking the event loop if using sync clients.
+    """
+    if not OPENAI_API_KEY and not os.getenv("OPENAI_API_KEY"):
+        logger.warning("OPENAI_API_KEY is not set; returning fallback answer.")
+        return "I cannot reach the language model right now."
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _openai_complete_blocking, final_prompt)
+
+def _openai_complete_blocking(final_prompt: str) -> str:
+    # Try modern SDK first
+    try:
+        from openai import OpenAI  # type: ignore
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", OPENAI_API_KEY))
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": final_prompt},
+            ],
+            temperature=0.2,
+        )
+        content = resp.choices[0].message.content or ""
+        return content.strip()
+    except Exception as e_modern:
+        logger.info(f"Modern OpenAI client not used ({e_modern}); trying legacy SDK...")
+
+    # Fallback: legacy SDK
+    try:
+        import openai  # type: ignore
+        openai.api_key = os.getenv("OPENAI_API_KEY", OPENAI_API_KEY)
+        resp = openai.ChatCompletion.create(
+            model=os.getenv("OPENAI_MODEL", OPENAI_MODEL),
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": final_prompt},
+            ],
+            temperature=0.2,
+        )
+        content = resp["choices"][0]["message"]["content"] or ""
+        return content.strip()
+    except Exception as e_legacy:
+        logger.exception(f"OpenAI call failed: {e_legacy}")
+        return "I could not generate a response due to an internal error."
+
+# =========================
+# Endpoints
+# =========================
+
+@app.post("/debug-token")
+async def debug_token(request: Request):
+    auth_header = request.headers.get("authorization")
+    return JSONResponse({"received_authorization": auth_header})
+
+@app.post("/api/answer", dependencies=[Depends(require_rag_token)])
+async def api_answer(request: Request):
+    """
+    Main endpoint called by ZoHo webhook / extension.
+    Expects a JSON payload containing the email content somewhere.
+    This implementation looks for common keys but falls back to raw JSON.
+    """
+    # 1) Parse body and log keys
+    try:
+        body = await request.json()
+    except Exception as e:
+        logger.exception(f"Invalid JSON body: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    try:
+        logger.info(f"Incoming body keys: {list(body.keys())}")
+    except Exception:
+        pass
+
+    # 2) Extract the text to feed into RAG
+    #    Adapt these lines to fit your exact ZoHo payload.
+    user_text = ""
+    if isinstance(body, dict):
+        # Try common fields first
+        for key_guess in ["plainText", "text", "message", "content", "body"]:
+            if key_guess in body and isinstance(body[key_guess], str):
+                user_text = body[key_guess] or ""
+                break
+        if not user_text:
+            # Nested path example: body["ticketThread"]["content"]
+            thread = body.get("ticketThread") or {}
+            if isinstance(thread, dict):
+                for k in ["content", "plainText", "text"]:
+                    if isinstance(thread.get(k), str) and thread.get(k):
+                        user_text = thread[k]
+                        break
+
+    if not user_text:
+        # Last resort: stringify the whole body
+        user_text = json.dumps(body, ensure_ascii=False)
+
+    user_text = user_text.strip()
+    logger.info(f"user_text(sample 300): {user_text[:300]}")
+
+    # 3) Detect language & create system prompt
+    lang = detect_language(user_text)
+    system_prompt = make_system_prompt(lang)
+
+    # 4) Retrieval (ensure query is used!)
+    try:
+        top_chunks = await get_top_chunks(user_text)
+    except Exception as e:
+        logger.exception(f"get_top_chunks failed: {e}")
+        top_chunks = []
+
+    context = "\n\n".join(
+        ch.get("text", "") if isinstance(ch, dict) else str(ch)
+        for ch in top_chunks
+    )[:8000]
+
+    # 5) Compose final prompt (log a safe preview)
+    final_prompt = (
+        f"{system_prompt}\n\n"
+        f"User message:\n{user_text}\n\n"
+        f"Relevant context (may be partial):\n{context}\n\n"
+        f"Answer:"
+    )
+    logger.info(f"final_prompt(sample 400): {final_prompt[:400]}")
+
+    # 6) Call LLM
+    try:
+        answer = await get_rag_answer(final_prompt)
+    except Exception as e:
+        logger.exception(f"OpenAI call failed: {e}")
+        answer = (
+            "Beklager, der opstod en fejl under genereringen af svaret."
+            if lang == "da" else
+            "Sorry, an error occurred while generating the answer."
+        )
+
+    return {"finalAnswer": answer, "language": lang, "timestamp": datetime.utcnow().isoformat() + "Z"}
