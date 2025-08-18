@@ -23,7 +23,7 @@ except Exception:
 import aiohttp
 import aiosqlite
 
-from fastapi import FastAPI, HTTPException, Body, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -119,25 +119,47 @@ async def on_startup():
 # =========================
 def detect_language(text: str) -> str:
     """
-    Very simple heuristic: 'da' for Danish if signals present; otherwise 'en'.
-    No external dependencies.
+    Lightweight heuristic language detector for da/de/fr/en.
+    Returns one of: 'da', 'de', 'fr', 'en'.
     """
     if not text:
         return "en"
     lowered = text.lower()
 
-    # Special Danish chars
+    # --- Danish ---
     if any(ch in lowered for ch in ["æ", "ø", "å"]):
         return "da"
-
-    # Common Danish words/signals
     dk_signals = [
         " og ", " jeg ", " ikke", " det ", " der ", " som ", " har ", " skal ",
         " hvad", " hvordan", " hvorfor", " måske", " fordi", " gerne", " tak",
         " hej ", " kære "
     ]
-    score = sum(1 for w in dk_signals if w in lowered)
-    return "da" if score >= 2 else "en"
+    if sum(1 for w in dk_signals if w in lowered) >= 2:
+        return "da"
+
+    # --- German ---
+    if any(ch in lowered for ch in ["ä", "ö", "ü", "ß"]):
+        return "de"
+    de_signals = [
+        " und ", " nicht", " bitte", " danke", " hallo", " sie ", " ich ", " wir ",
+        " zum ", " zur ", " mit ", " für ", " ueber", " über", " kein ", " keine ",
+    ]
+    if sum(1 for w in de_signals if w in lowered) >= 2:
+        return "de"
+
+    # --- French ---
+    if any(ch in lowered for ch in ["à", "â", "æ", "ç", "é", "è", "ê", "ë", "î", "ï", "ô", "œ", "ù", "û", "ü", "ÿ"]):
+        return "fr"
+    fr_signals = [
+        " bonjour", " merci", " s'il ", " s’", " vous ", " nous ", " je ", " tu ",
+        " il ", " elle ", " avec ", " pour ", " mais ", " pas ", " est ", " aux ",
+        " des ", " une ", " un "
+    ]
+    if sum(1 for w in fr_signals if w in lowered) >= 2:
+        return "fr"
+
+    # Default
+    return "en"
 
 
 def make_system_prompt(lang: str) -> str:
@@ -145,14 +167,30 @@ def make_system_prompt(lang: str) -> str:
         return (
             "Du er en hjælpsom assistent for AlignerService. "
             "Svar præcist og kortfattet på dansk. "
+            "Konteksten nedenfor kan være på engelsk; det er helt i orden. "
             "Hvis du henviser til interne dokumenter, hold det neutralt og faktuelt."
         )
-    else:
+    if lang == "de":
         return (
-            "You are a helpful assistant for AlignerService. "
-            "Answer precisely and concisely in English. "
-            "If you refer to internal documents, keep it neutral and factual."
+            "Du bist eine hilfreiche Assistenz für AlignerService. "
+            "Antworte präzise und knapp auf Deutsch. "
+            "Der Kontext unten kann auf Englisch sein; das ist in Ordnung. "
+            "Wenn du dich auf interne Dokumente beziehst, bleib neutral und sachlich."
         )
+    if lang == "fr":
+        return (
+            "Vous êtes un assistant utile pour AlignerService. "
+            "Répondez de manière précise et concise en français. "
+            "Le contexte ci-dessous peut être en anglais ; c’est acceptable. "
+            "Si vous faites référence à des documents internes, restez neutre et factuel."
+        )
+    # en
+    return (
+        "You are a helpful assistant for AlignerService. "
+        "Answer precisely and concisely in English. "
+        "The context below may be in English; that's fine. "
+        "If you refer to internal documents, keep it neutral and factual."
+    )
 
 # =========================
 # Minimal RAG Core (safe fallbacks)
@@ -213,31 +251,23 @@ async def init_db():
         logger.exception(f"SQLite check failed: {e}")
 
 def _strip_html(text: str) -> str:
-    """Meget enkel HTML-stripper, så keywords matcher bedre."""
+    """Simple HTML stripper to improve keyword matching."""
     if not text:
         return ""
-    # Fjern tags
-    text = re.sub(r"<[^>]+>", " ", text)
-    # Komprimer whitespace
+    text = re.sub(r"<[^>]+>", " ", text)  # remove tags
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 def _extract_text_from_meta(item: Any) -> str:
     """
-    Ekstraher tekst robust fra forskellige metadata-formater.
-    - Prøver en række gængse feltnavne
-    - Leder også i simple nested dicts
-    - Kan samle lister af strenge
-    - Fallback: samler alle strengværdier i dict'en
+    Robust text extraction from various metadata formats.
     """
     if item is None:
         return ""
 
-    # Direkte str
     if isinstance(item, str):
         return item
 
-    # Liste af strenge eller mixed -> join
     if isinstance(item, list):
         parts = []
         for v in item:
@@ -249,7 +279,6 @@ def _extract_text_from_meta(item: Any) -> str:
                     parts.append(nested)
         return "\n".join(parts).strip()
 
-    # Dict: prøv prioriterede felter
     if isinstance(item, dict):
         candidates = [
             "text", "content", "chunk_text", "chunk", "page_text", "pageContent",
@@ -262,13 +291,11 @@ def _extract_text_from_meta(item: Any) -> str:
                 val = item.get(key)
                 if isinstance(val, str) and val.strip():
                     return val
-                # Hvis feltet er nested dict/list – prøv at trække tekst ud
                 if isinstance(val, (dict, list)):
                     nested = _extract_text_from_meta(val)
                     if nested:
                         return nested
 
-        # Fallback: join ALLE streng-værdier i dict'en (kun top-level + simple nested)
         flat_strings = []
         for v in item.values():
             if isinstance(v, str):
@@ -292,12 +319,65 @@ def _keyword_score(text: str, query: str) -> int:
     q_tokens = [tok for tok in query.lower().split() if len(tok) > 2]
     return sum(1 for tok in q_tokens if tok in t)
 
+# ------------ Translation helpers ------------
+async def translate_to_english_if_needed(text: str, lang: str) -> str:
+    """If input language is not English, translate the query to English for retrieval."""
+    if lang == "en" or not text:
+        return text
+    prompt = (
+        "Translate the following text to English only. "
+        "Do not add explanations or metadata. Output only the translated text.\n\n"
+        f"Text:\n{text}"
+    )
+    out = await _llm_short(prompt)
+    return out.strip() if out else text
+
+async def _llm_short(user_prompt: str) -> str:
+    """Small helper to call the LLM with a short prompt (temperature 0)."""
+    if not (OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")):
+        logger.warning("OPENAI_API_KEY missing for translation; returning original text.")
+        return ""
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _openai_complete_blocking_short, user_prompt)
+
+def _openai_complete_blocking_short(user_prompt: str) -> str:
+    # Try modern SDK first
+    try:
+        from openai import OpenAI  # type: ignore
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", OPENAI_API_KEY))
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "You translate text precisely. Return only the translated text."},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.0,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e_modern:
+        logger.info(f"Modern OpenAI client not used for short call ({e_modern}); trying legacy SDK...")
+
+    try:
+        import openai  # type: ignore
+        openai.api_key = os.getenv("OPENAI_API_KEY", OPENAI_API_KEY)
+        resp = openai.ChatCompletion.create(
+            model=os.getenv("OPENAI_MODEL", OPENAI_MODEL),
+            messages=[
+                {"role": "system", "content": "You translate text precisely. Return only the translated text."},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.0,
+        )
+        return (resp["choices"][0]["message"]["content"] or "").strip()
+    except Exception as e_legacy:
+        logger.exception(f"Short OpenAI call failed: {e_legacy}")
+        return ""
+
+# ------------ Retrieval ------------
 async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
     """
-    Tolerant retrieval:
-    - Prøver mange feltnavne i metadata for at finde tekst
-    - Stripper simpel HTML
-    - Returnerer top-k baseret på naiv keyword-score
+    Tolerant retrieval based on metadata keyword overlap.
     """
     if not _METADATA:
         logger.info("No metadata loaded; returning empty retrieval result.")
@@ -316,7 +396,6 @@ async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
         if score > 0:
             scored.append((score, text, item))
 
-    # Hvis intet fik score > 0, returnér tomt (undgå at fylde modellen med irrelevant kontekst)
     if not scored:
         logger.info("No positive keyword matches in metadata for this query.")
         return []
@@ -379,6 +458,10 @@ def _openai_complete_blocking(final_prompt: str) -> str:
 # Endpoints
 # =========================
 
+@app.get("/")
+async def health():
+    return {"status": "ok"}
+
 @app.post("/debug-token")
 async def debug_token(request: Request):
     auth_header = request.headers.get("authorization")
@@ -404,16 +487,13 @@ async def api_answer(request: Request):
         pass
 
     # 2) Extract the text to feed into RAG
-    #    Adapt these lines to fit your exact ZoHo payload.
     user_text = ""
     if isinstance(body, dict):
-        # Try common fields first
         for key_guess in ["plainText", "text", "message", "content", "body"]:
             if key_guess in body and isinstance(body[key_guess], str):
                 user_text = body[key_guess] or ""
                 break
         if not user_text:
-            # Nested path example: body["ticketThread"]["content"]
             thread = body.get("ticketThread") or {}
             if isinstance(thread, dict):
                 for k in ["content", "plainText", "text"]:
@@ -422,7 +502,6 @@ async def api_answer(request: Request):
                         break
 
     if not user_text:
-        # Last resort: stringify the whole body
         user_text = json.dumps(body, ensure_ascii=False)
 
     user_text = user_text.strip()
@@ -432,20 +511,36 @@ async def api_answer(request: Request):
     lang = detect_language(user_text)
     system_prompt = make_system_prompt(lang)
 
-    # 4) Retrieval (ensure query is used!)
+    # 4) Cross-lingual: translate query to English for retrieval if needed
+    retrieval_query = await translate_to_english_if_needed(user_text, lang)
+    if retrieval_query != user_text:
+        logger.info("Query translated to English for retrieval.")
+        logger.info(f"retrieval_query(sample 200): {retrieval_query[:200]}")
+
+    # 5) Retrieval
     try:
-        top_chunks = await get_top_chunks(user_text)
+        top_chunks = await get_top_chunks(retrieval_query)
     except Exception as e:
         logger.exception(f"get_top_chunks failed: {e}")
         top_chunks = []
 
-    # === FAILSAFE GUARD: ingen kontekst -> sikkert, generisk svar uden at opfinde detaljer ===
+    # === FAILSAFE GUARD: no context -> safe, generic answer without inventing details ===
     if not top_chunks:
         safe_generic = {
             "da": (
                 "Jeg kan hjælpe med at strukturere jeres aligner-workflow i klare trin "
                 "(screening, diagnose, planlægning, samtykke, opstart, kontroller, refinement, retention). "
                 "Hvis du vil have et svar, der er direkte forankret i jeres egne materialer, skal jeg have adgang til RAG-kildedata."
+            ),
+            "de": (
+                "Ich kann euren Aligner-Workflow in klaren Schritten strukturieren "
+                "(Screening, Diagnose, Planung, Einverständnis, Start, Kontrollen, Refinement, Retention). "
+                "Wenn die Antwort direkt auf euren eigenen Materialien basieren soll, brauche ich Zugriff auf die RAG-Quelldaten."
+            ),
+            "fr": (
+                "Je peux structurer votre flux de travail aligneur en étapes claires "
+                "(dépistage, diagnostic, planification, consentement, démarrage, contrôles, refinement, rétention). "
+                "Si vous souhaitez une réponse basée directement sur vos propres ressources, j’ai besoin d’accéder aux données sources du RAG."
             ),
             "en": (
                 "I can outline a clear, step-by-step aligner workflow "
@@ -464,26 +559,27 @@ async def api_answer(request: Request):
         for ch in top_chunks
     )[:8000]
 
-    # 5) Compose final prompt (log a safe preview)
+    # 6) Compose final prompt
     final_prompt = (
         f"{system_prompt}\n\n"
-        f"VIGTIGT / IMPORTANT: Brug kun oplysninger fra 'Relevant context' herunder. "
-        f"Opret ikke navne, sagsnumre eller interne detaljer, der ikke står i konteksten.\n\n"
+        f"IMPORTANT: Use only the information from 'Relevant context' below. "
+        f"Do not invent names, case numbers or internal details that are not present in the context.\n\n"
         f"User message:\n{user_text}\n\n"
-        f"Relevant context (may be partial):\n{context}\n\n"
-        f"Answer:"
+        f"Relevant context (may be in English and may be partial):\n{context}\n\n"
+        f"Answer in the user's language (detected: {lang}):"
     )
     logger.info(f"final_prompt(sample 400): {final_prompt[:400]}")
 
-    # 6) Call LLM
+    # 7) Call LLM
     try:
         answer = await get_rag_answer(final_prompt)
     except Exception as e:
         logger.exception(f"OpenAI call failed: {e}")
         answer = (
-            "Beklager, der opstod en fejl under genereringen af svaret."
-            if lang == "da" else
-            "Sorry, an error occurred while generating the answer."
+            "Beklager, der opstod en fejl under genereringen af svaret." if lang == "da"
+            else "Es ist ein Fehler bei der Antwortgenerierung aufgetreten." if lang == "de"
+            else "Désolé, une erreur s’est produite lors de la génération de la réponse." if lang == "fr"
+            else "Sorry, an error occurred while generating the answer."
         )
 
     return {"finalAnswer": answer, "language": lang, "timestamp": datetime.utcnow().isoformat() + "Z"}
