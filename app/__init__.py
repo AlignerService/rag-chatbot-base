@@ -439,6 +439,26 @@ async def api_answer(request: Request):
         logger.exception(f"get_top_chunks failed: {e}")
         top_chunks = []
 
+    # === FAILSAFE GUARD: ingen kontekst -> sikkert, generisk svar uden at opfinde detaljer ===
+    if not top_chunks:
+        safe_generic = {
+            "da": (
+                "Jeg kan hjælpe med at strukturere jeres aligner-workflow i klare trin "
+                "(screening, diagnose, planlægning, samtykke, opstart, kontroller, refinement, retention). "
+                "Hvis du vil have et svar, der er direkte forankret i jeres egne materialer, skal jeg have adgang til RAG-kildedata."
+            ),
+            "en": (
+                "I can outline a clear, step-by-step aligner workflow "
+                "(screening, diagnosis, planning, consent, start, reviews, refinement, retention). "
+                "If you want an answer grounded in your own sources, I’ll need access to the RAG data."
+            ),
+        }
+        return {
+            "finalAnswer": safe_generic.get(lang, safe_generic["en"]),
+            "language": lang,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+
     context = "\n\n".join(
         ch.get("text", "") if isinstance(ch, dict) else str(ch)
         for ch in top_chunks
@@ -447,6 +467,8 @@ async def api_answer(request: Request):
     # 5) Compose final prompt (log a safe preview)
     final_prompt = (
         f"{system_prompt}\n\n"
+        f"VIGTIGT / IMPORTANT: Brug kun oplysninger fra 'Relevant context' herunder. "
+        f"Opret ikke navne, sagsnumre eller interne detaljer, der ikke står i konteksten.\n\n"
         f"User message:\n{user_text}\n\n"
         f"Relevant context (may be partial):\n{context}\n\n"
         f"Answer:"
