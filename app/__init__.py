@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 import numpy as np  # optional, used if you later expand retrieval
-# Optional imports: we keep them but guard usage so the app still runs if missing
+# Optional imports: keep but guard usage so the app still runs if missing
 try:
     import faiss  # type: ignore
 except Exception:
@@ -374,10 +374,24 @@ def _openai_complete_blocking_short(user_prompt: str) -> str:
         logger.exception(f"Short OpenAI call failed: {e_legacy}")
         return ""
 
+# ------------ Retrieval helpers (labels) ------------
+def _label_from_meta(m):
+    if isinstance(m, dict):
+        return (
+            m.get("title")
+            or m.get("source")
+            or m.get("path")
+            or m.get("url")
+            or m.get("id")
+            or "metadata"
+        )
+    return "metadata"
+
 # ------------ Retrieval ------------
 async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
     """
     Tolerant retrieval based on metadata keyword overlap.
+    Enforces a slightly stricter threshold (score >= 2).
     """
     if not _METADATA:
         logger.info("No metadata loaded; returning empty retrieval result.")
@@ -393,7 +407,7 @@ async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
             continue
 
         score = _keyword_score(text, q)
-        if score > 0:
+        if score >= 2:  # stricter than >0
             scored.append((score, text, item))
 
     if not scored:
@@ -401,6 +415,13 @@ async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
         return []
 
     scored.sort(key=lambda x: x[0], reverse=True)
+    # preview top labels in logs
+    try:
+        preview = ", ".join(_label_from_meta(s[2]) for s in scored[:3])
+        logger.info(f"Top source preview: {preview}")
+    except Exception:
+        pass
+
     top = [{"text": s[1], "meta": s[2]} for s in scored[:k]]
     logger.info(f"Retrieved chunks: {len(top)} (from {len(_METADATA)} metadata items)")
     return top
@@ -548,9 +569,12 @@ async def api_answer(request: Request):
                 "If you want an answer grounded in your own sources, I’ll need access to the RAG data."
             ),
         }
+        # sources (likely empty) for UI consistency
+        sources = []
         return {
             "finalAnswer": safe_generic.get(lang, safe_generic["en"]),
             "language": lang,
+            "sources": sources,
             "timestamp": datetime.utcnow().isoformat() + "Z"
         }
 
@@ -582,4 +606,17 @@ async def api_answer(request: Request):
             else "Sorry, an error occurred while generating the answer."
         )
 
-    return {"finalAnswer": answer, "language": lang, "timestamp": datetime.utcnow().isoformat() + "Z"}
+    # 8) Build sources list for UI (max 3)
+    sources = []
+    for ch in top_chunks[:3]:
+        meta = ch.get("meta", {})
+        label = _label_from_meta(meta)
+        url = meta.get("url") if isinstance(meta, dict) else None
+        sources.append({"label": label, "url": url})
+
+    return {
+        "finalAnswer": answer,
+        "language": lang,
+        "sources": sources,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
