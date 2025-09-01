@@ -50,10 +50,17 @@ DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID", "")
 DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET", "")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
 
+# -------- Q&A JSON integration (env-config) --------
+QA_JSON_PATH   = os.getenv("QA_JSON_PATH", "mao_qa_rag_export.json")
+QA_JSON_ENABLE = os.getenv("QA_JSON_ENABLE", "1") == "1"
+
 # Globals
 _FAISS_INDEX = None
 _METADATA: List[Dict[str, Any]] = []
 _SQLITE_OK = False
+
+# Q&A globals
+_QA_ITEMS: List[Dict[str, Any]] = []
 
 # =========================
 # FastAPI & CORS
@@ -101,6 +108,9 @@ async def on_startup():
     try:
         await download_db()  # pulls SQLite from Dropbox (access token OR refresh flow)
         await init_db()      # loads FAISS, metadata.json, verifies SQLite
+        # --- load Q&A JSON (new) ---
+        global _QA_ITEMS
+        _QA_ITEMS = _qa_load_items()
         logger.info("RAG startup complete")
     except Exception as e:
         logger.exception(f"Startup failed: {e}")
@@ -521,6 +531,87 @@ def _keyword_score(text: str, query: str) -> int:
     return sum(1 for tok in q_tokens if tok in t)
 
 # =========================
+# Q&A JSON search (NEW)
+# =========================
+def _qa_log(msg: str):
+    try:
+        logger.info(f"[Q&A JSON] {msg}")
+    except Exception:
+        print(f"[Q&A JSON] {msg}")
+
+def _qa_load_items() -> List[Dict[str, Any]]:
+    if not QA_JSON_ENABLE:
+        _qa_log("disabled via QA_JSON_ENABLE")
+        return []
+    try:
+        with open(QA_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            _qa_log("unexpected JSON format (not a list) – disabling")
+            return []
+        _qa_log(f"loaded {len(data)} Q&A items from {QA_JSON_PATH}")
+        return data
+    except FileNotFoundError:
+        _qa_log(f"file not found: {QA_JSON_PATH} – disabling")
+    except Exception as e:
+        _qa_log(f"load error: {e} – disabling")
+    return []
+
+def _qa_tokenize(s: str) -> List[str]:
+    s = (s or "").lower()
+    s = re.sub(r"[^a-z0-9æøåéüöß\s\-]", " ", s)
+    return [t for t in s.split() if len(t) >= 2]
+
+_QA_WEIGHTS = {
+    "refinement": 3.0, "refinements": 3.0, "tracking": 2.0, "elastic": 2.0, "elastics": 2.0,
+    "class": 0.5, "ii": 0.8, "iii": 0.8, "attachment": 2.0, "attachments": 2.0, "ipr": 2.0,
+    "anchorage": 2.0, "torque": 2.0, "intrusion": 1.8, "extrusion": 1.8, "rotation": 1.2,
+    "crossbite": 1.8, "retention": 1.8, "scan": 1.2, "x-rays": 1.2, "cbct": 1.2, "trimline": 1.5,
+}
+
+def _qa_score(query_tokens: List[str], haystack_tokens: List[str]) -> float:
+    if not haystack_tokens:
+        return 0.0
+    hs = set(haystack_tokens)
+    score = 0.0
+    for t in set(query_tokens):
+        if t in hs:
+            score += 1.0 + _QA_WEIGHTS.get(t, 0.0)
+    return score
+
+def search_qa_json(query: str, k: int = 5) -> List[Dict[str, Any]]:
+    """Returnerer top-k Q&A-objekter (uændret struktur) fra mao_qa_rag_export.json."""
+    if not _QA_ITEMS:
+        return []
+    qtok = _qa_tokenize(query)
+    scored = []
+    for it in _QA_ITEMS:
+        hay = " ".join(
+            [it.get("question", "")]
+            + (it.get("synonyms", []) or [])
+            + [it.get("answer_markdown", "")]
+        )
+        stokens = _qa_tokenize(hay)
+        s = _qa_score(qtok, stokens)
+        if s > 0:
+            scored.append((s, it))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [it for _, it in scored[:k]]
+
+def _qa_to_chunk(it: Dict[str, Any]) -> Dict[str, Any]:
+    # Formateres som et "chunk" så resten af din pipeline kan bruge det direkte
+    text = f"Q: {it.get('question','')}\n\n{it.get('answer_markdown','')}"
+    meta = {
+        "source": "Q&A",
+        "id": it.get("id"),
+        "title": it.get("question"),
+        "refs": it.get("refs", []),
+        "category": it.get("category"),
+        "tags": it.get("tags", []),
+    }
+    return {"text": text, "meta": meta}
+
+# =========================
 # LLM translation & calls
 # =========================
 async def translate_to_english_if_needed(text: str, lang: str) -> str:
@@ -716,14 +807,17 @@ async def api_answer(request: Request):
         logger.info("Query translated to English for retrieval.")
         logger.info(f"retrieval_query(sample 200): {retrieval_query[:200]}")
 
+    # --- NEW: Q&A hits (from JSON) ---
+    qa_hits = [ _qa_to_chunk(x) for x in search_qa_json(retrieval_query, k=3) ]
+
     try:
         top_chunks = await get_top_chunks(retrieval_query)
     except Exception as e:
         logger.exception(f"get_top_chunks failed: {e}")
         top_chunks = []
 
-    # 5) Failsafe if no context
-    if not top_chunks:
+    # 5) Failsafe if no context at all
+    if not qa_hits and not top_chunks:
         safe_generic = {
             "da": (
                 "Grundprotokol når kontekst mangler:\n"
@@ -758,7 +852,10 @@ async def api_answer(request: Request):
             "message": {"content": safe_generic.get(lang, safe_generic["en"]), "language": lang}
         }
 
-    context = "\n\n".join(ch.get("text", "") if isinstance(ch, dict) else str(ch) for ch in top_chunks)[:8000]
+    # Combine Q&A chunks first, then metadata chunks
+    combined_chunks = qa_hits + top_chunks
+
+    context = "\n\n".join(ch.get("text", "") if isinstance(ch, dict) else str(ch) for ch in combined_chunks)[:8000]
 
     # 6) Compose final prompt
     final_prompt = (
@@ -783,13 +880,18 @@ async def api_answer(request: Request):
             else "Sorry, an error occurred while generating the answer."
         )
 
-    # 8) Sources
+    # 8) Sources (show top of each group)
     sources = []
-    for ch in top_chunks[:3]:
+    for ch in (qa_hits[:2] + top_chunks[:2]):
         meta = ch.get("meta", {})
         label = _label_from_meta(meta)
         url = meta.get("url") if isinstance(meta, dict) else None
-        sources.append({"label": label, "url": url})
+        # include refs if present (useful for audit)
+        refs = meta.get("refs") if isinstance(meta, dict) else None
+        src = {"label": label, "url": url}
+        if refs:
+            src["refs"] = refs
+        sources.append(src)
 
     return {
         "finalAnswer": answer,
