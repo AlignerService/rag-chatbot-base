@@ -7,6 +7,7 @@ import hmac
 import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from functools import lru_cache
 
 import numpy as np  # optional
 try:
@@ -42,10 +43,8 @@ OPENAI_MODEL       = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
 
 # -------- Dropbox creds (both modes supported) --------
-DROPBOX_ACCESS_TOKEN  = os.getenv("DROPBOX_ACCESS_TOKEN", "")     # simple, short-lived token (or long-lived in dev)
-DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH", "")          # e.g. "/Apps/AlignerService/rag.sqlite3"
-
-# Refresh-token flow (matches your Render variables)
+DROPBOX_ACCESS_TOKEN  = os.getenv("DROPBOX_ACCESS_TOKEN", "")
+DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH", "")
 DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID", "")
 DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET", "")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
@@ -53,6 +52,9 @@ DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
 # -------- Q&A JSON integration (env-config) --------
 QA_JSON_PATH   = os.getenv("QA_JSON_PATH", "mao_qa_rag_export.json")
 QA_JSON_ENABLE = os.getenv("QA_JSON_ENABLE", "1") == "1"
+
+# Optional output mode: markdown | plain | tech_brief
+OUTPUT_MODE_DEFAULT = os.getenv("OUTPUT_MODE", "markdown").lower()
 
 # Globals
 _FAISS_INDEX = None
@@ -106,8 +108,8 @@ async def on_startup():
         pass
 
     try:
-        await download_db()  # pulls SQLite from Dropbox (access token OR refresh flow)
-        await init_db()      # loads FAISS, metadata.json, verifies SQLite
+        await download_db()
+        await init_db()
         # --- load Q&A JSON (new) ---
         global _QA_ITEMS
         _QA_ITEMS = _qa_load_items()
@@ -214,24 +216,6 @@ def make_system_prompt(lang: str, role: str) -> str:
         "team": "• Til klinikteam: handoffs, checklister, opgavefordeling; kliniske beslutninger hos tandlæge/ortodontist.",
         "clinician": "• Til klinikere: fokus på kliniske parametre, protokoller, beslutningsregler.",
     }
-    role_text_de = {
-        "dentist": "• Für Zahnärzt:innen: klinische Parameter, Planungsentscheidungen, Risiken/Kontraindikationen, Dokumentation.",
-        "orthodontist": "• Für KFO: Staging, Attachments/Engager, IPR-Verteilung, Elastiks, Biomechanik.",
-        "assistant": "• Für Assistenz/ZFA: Chairside-Checklisten, Dokumentation, Foto/Scan-Protokolle, Eskalation.",
-        "hygienist": "• Für DH: Hygiene/Compliance, Instruktion, Beobachtungen; keine Planänderung.",
-        "receptionist": "• Für Rezeption/PM: Vorlagen, (Um)Terminierung, Vorbereitung; keine klinischen Ratschläge.",
-        "team": "• Für Team: Übergaben, Checklisten, Aufgabenverteilung; Entscheidungen bei ZA/KFO.",
-        "clinician": "• Für Behandler:innen: klinische Parameter, Protokolle, Entscheidungsregeln.",
-    }
-    role_text_fr = {
-        "dentist": "• Pour dentistes : paramètres cliniques, choix de planification, risques/contre-indications, documentation.",
-        "orthodontist": "• Pour orthodontistes : staging, attachments/engagers, répartition IPR, élastiques, biomécanique.",
-        "assistant": "• Pour assistant(e)s : check-lists au fauteuil, champs de doc, protocoles photo/scan, critères d’escalade.",
-        "hygienist": "• Pour hygiénistes : hygiène/compliance, éducation, observations ; pas de modification du plan.",
-        "receptionist": "• Pour accueil : modèles, (re)prise de RDV, liste de préparation ; pas de conseil clinique.",
-        "team": "• Pour équipe : handoffs, check-lists, répartition des tâches ; décisions chez dentiste/orthodontiste.",
-        "clinician": "• Pour praticien(ne)s : paramètres cliniques, protocoles, règles décisionnelles.",
-    }
     role_text_en = {
         "dentist": "• For dentists: clinical parameters, planning trade-offs, risks/contra-indications, documentation.",
         "orthodontist": "• For orthodontists: staging, attachments/engagers, IPR distribution, elastics, biomechanics.",
@@ -241,50 +225,26 @@ def make_system_prompt(lang: str, role: str) -> str:
         "team": "• For clinic teams: handoffs, checklists, task allocation; decisions stay with dentist/orthodontist.",
         "clinician": "• For clinicians: focus on clinical parameters, protocols, decision rules.",
     }
-    role_map = {"da": role_text_da, "de": role_text_de, "fr": role_text_fr, "en": role_text_en}
+    role_map = {"da": role_text_da, "en": role_text_en}
     role_line = role_map.get(lang, role_text_en).get(role, role_map.get(lang, role_text_en)["clinician"])
 
     if lang == "da":
         return (
             "Du er AI-assistenten for tandlæge **Helle Hatt** (ekspert i clear aligners). "
             "Du svarer KUN til professionelle (tandlæger, ortodontister, klinikteams) — aldrig patienter.\n\n"
-            "KILDER: Brug PRIMÆRT 'Relevant context' (SQLite/Dropbox, bog, blog). Hvis utilstrækkelig: sig det og giv kun etablerede best practices — "
-            "opfind aldrig politikker, sagsnumre, navne eller data uden for konteksten. Konteksten kan være engelsk; oversæt terminologi naturligt til dansk.\n\n"
+            "KILDER: Brug PRIMÆRT 'Relevant context' (Q&A, bog, historik). Hvis utilstrækkelig: sig det og giv kun etablerede best practices — "
+            "opfind aldrig politikker, sagsnumre, navne eller data uden for konteksten.\n\n"
             f"ROLLEFOKUS\n{role_line}\n\n"
             "FORMAT\n• Kort konklusion (1–2 sætninger)\n• Struktureret protokol (nummererede trin med kliniske parametre: mm IPR, 22 t/d, staging)\n"
             "• Beslutningsregler (if/then) + risici/kontraindikationer\n• Næste skridt (2–4 punkter) + evt. journal-/opgavenote\n\n"
             "SIKKERHED\n• Ingen patient-specifik diagnose/ordination uden tilstrækkelig info; anfør usikkerheder kort. "
             "• Ingen direkte patienthenvendelse. Opret aldrig interne detaljer, der ikke er i konteksten."
         )
-    if lang == "de":
-        return (
-            "Du bist die KI-Assistenz von **Dr. Helle Hatt** (Clear-Aligner-Expertin). "
-            "Du adressierst AUSSCHLIESSLICH Fachleute.\n\n"
-            "QUELLEN: Primär 'Relevant context'. Bei Lücken: offen sagen und nur etablierte Best Practices liefern — "
-            "nichts erfinden (Richtlinien, Fallnummern, Namen, Daten). Kontext ggf. auf Englisch; Terminologie natürlich auf Deutsch.\n\n"
-            f"ROLLE\n{role_line}\n\n"
-            "FORMAT\n• Kurze Zusammenfassung (1–2 Sätze)\n• Strukturiertes Protokoll (mm IPR, 22 h/Tag, Staging)\n"
-            "• Entscheidungsregeln + Risiken/Kontraindikationen\n• Nächste Schritte (2–4) + ggf. Journal-/Aufgaben-Notiz\n\n"
-            "SICHERHEIT\n• Keine patientenspez. Diagnose/Anordnung ohne ausreichende Info; Unsicherheiten kurz nennen. "
-            "• Keine Patientenansprache. Keine erfundenen internen Details."
-        )
-    if lang == "fr":
-        return (
-            "Vous êtes l’assistant IA de **la Dr Helle Hatt** (experte en aligneurs). "
-            "Vous vous adressez EXCLUSIVEMENT aux professionnels.\n\n"
-            "SOURCES : Priorité au « Relevant context ». Si insuffisant : le dire et fournir uniquement des bonnes pratiques établies — "
-            "ne rien inventer (politiques, n° de dossier, noms, données). Contexte possiblement en anglais ; traduire naturellement en français.\n\n"
-            f"FOCUS RÔLE\n{role_line}\n\n"
-            "FORMAT\n• Conclusion brève (1–2 phrases)\n• Protocole structuré (mm d’IPR, 22 h/j, staging)\n"
-            "• Règles décisionnelles + risques/contre-indications\n• Étapes suivantes (2–4) + note dossier/tâche\n\n"
-            "SÉCURITÉ\n• Pas de diagnostic/ordonnance spécifique sans données suffisantes ; incertitudes brèves. "
-            "• Pas d’adresse patient. Ne pas inventer de détails internes."
-        )
     return (
         "You are the AI assistant for **Dr. Helle Hatt** (clear-aligner expert). "
         "Address PROFESSIONALS ONLY.\n\n"
         "SOURCES: Rely on 'Relevant context'. If insufficient: state it and provide only established best practices — "
-        "never invent policies, case numbers, names or data. Context may be in English; translate naturally.\n\n"
+        "never invent policies, case numbers, names or data.\n\n"
         f"ROLE FOCUS\n{role_line}\n\n"
         "FORMAT\n• Brief takeaway (1–2 sentences)\n• Structured protocol (numbered; mm IPR, 22 h/day, staging)\n"
         "• Decision rules + risks/contra-indications\n• Next steps (2–4) + optional chart/task note\n\n"
@@ -296,17 +256,9 @@ def make_system_prompt(lang: str, role: str) -> str:
 # Dropbox download (access token OR refresh flow)
 # =========================
 async def download_db():
-    """
-    Download SQLite from Dropbox to LOCAL_DB_PATH.
-    Supports:
-      - DROPBOX_ACCESS_TOKEN (simple)
-      - OR refresh flow with DROPBOX_CLIENT_ID + DROPBOX_CLIENT_SECRET + DROPBOX_REFRESH_TOKEN
-    Requires DROPBOX_DB_PATH (e.g. "/Apps/AlignerService/rag.sqlite3" or "/rag.sqlite3" for App Folder apps).
-    """
     if not DROPBOX_DB_PATH:
         logger.info("download_db(): no-op (DROPBOX_DB_PATH not set)")
         return
-
     try:
         import dropbox  # type: ignore
     except Exception as e:
@@ -314,7 +266,6 @@ async def download_db():
         return
 
     try:
-        # Choose auth mode
         if DROPBOX_ACCESS_TOKEN:
             dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
         elif DROPBOX_REFRESH_TOKEN and DROPBOX_CLIENT_ID and DROPBOX_CLIENT_SECRET:
@@ -324,17 +275,13 @@ async def download_db():
                 app_secret=DROPBOX_CLIENT_SECRET,
             )
         else:
-            logger.warning("Dropbox credentials missing: set either DROPBOX_ACCESS_TOKEN or (DROPBOX_CLIENT_ID, DROPBOX_CLIENT_SECRET, DROPBOX_REFRESH_TOKEN).")
+            logger.warning("Dropbox credentials missing.")
             return
 
-        # Normalize path
         dbx_path = DROPBOX_DB_PATH if DROPBOX_DB_PATH.startswith("/") else f"/{DROPBOX_DB_PATH}"
-
-        # Ensure local dir exists
         local_dir = os.path.dirname(LOCAL_DB_PATH)
         if local_dir:
             os.makedirs(local_dir, exist_ok=True)
-
         dbx.files_download_to_file(LOCAL_DB_PATH, dbx_path)
         logger.info(f"Downloaded SQLite from Dropbox path '{dbx_path}' to {LOCAL_DB_PATH}")
     except Exception as e:
@@ -381,13 +328,9 @@ async def init_db():
         logger.exception(f"SQLite check failed: {e}")
 
 # =========================
-# SQLite helpers (tolerant schema)
+# SQLite helpers (Zoho ticket text)
 # =========================
 async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[str] = None) -> str:
-    """
-    Try to find the latest message text for a given ticket_id (and optional contact_id)
-    by scanning tables/columns heuristically. Returns plain text or "" if not found.
-    """
     if not _SQLITE_OK:
         logger.warning("SQLite not available")
         return ""
@@ -405,7 +348,6 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            # list tables
             tables = []
             async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
                 async for row in cur:
@@ -415,7 +357,6 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
             best_time = None
 
             for table in tables:
-                # columns
                 async with db.execute(f"PRAGMA table_info('{table}')") as cur:
                     cols = [dict(row) async for row in cur]
                 col_names = [c["name"] for c in cols]
@@ -426,15 +367,13 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
                 time_cols = [c for c in candidates_time if c in col_names]
 
                 if not text_cols or not ticket_cols:
-                    continue  # cannot filter by ticket or no text
+                    continue
 
-                # Prefer the first candidate in each list
                 tcol = text_cols[0]
                 kcol = ticket_cols[0]
                 ccol = contact_cols[0] if contact_cols else None
                 timecol = time_cols[0] if time_cols else None
 
-                # Build SQL
                 where = f"{kcol} = ?"
                 params: List[Any] = [tid]
                 if cid and ccol:
@@ -451,7 +390,6 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
                             txt = (row["txt"] or "").strip()
                             tval = row["t"]
                             if txt:
-                                # choose the most recent across tables
                                 if best_time is None:
                                     best_text, best_time = txt, tval
                                 else:
@@ -530,86 +468,49 @@ def _keyword_score(text: str, query: str) -> int:
     q_tokens = [tok for tok in query.lower().split() if len(tok) > 2]
     return sum(1 for tok in q_tokens if tok in t)
 
-# =========================
-# Q&A JSON search (NEW)
-# =========================
-def _qa_log(msg: str):
-    try:
-        logger.info(f"[Q&A JSON] {msg}")
-    except Exception:
-        print(f"[Q&A JSON] {msg}")
+def md_to_plain(md: str) -> str:
+    if not md:
+        return ""
+    s = md
+    s = re.sub(r"`{3}[\s\S]*?`{3}", "", s)
+    s = re.sub(r"`([^`]+)`", r"\1", s)
+    s = re.sub(r"\*\*(.*?)\*\*", r"\1", s)
+    s = re.sub(r"_([^_]+)_", r"\1", s)
+    s = re.sub(r"^#+\s*", "", s, flags=re.M)
+    s = re.sub(r"^\s*[-*]\s+", "- ", s, flags=re.M)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
 
-def _qa_load_items() -> List[Dict[str, Any]]:
-    if not QA_JSON_ENABLE:
-        _qa_log("disabled via QA_JSON_ENABLE")
-        return []
-    try:
-        with open(QA_JSON_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            _qa_log("unexpected JSON format (not a list) – disabling")
-            return []
-        _qa_log(f"loaded {len(data)} Q&A items from {QA_JSON_PATH}")
-        return data
-    except FileNotFoundError:
-        _qa_log(f"file not found: {QA_JSON_PATH} – disabling")
-    except Exception as e:
-        _qa_log(f"load error: {e} – disabling")
-    return []
-
-def _qa_tokenize(s: str) -> List[str]:
-    s = (s or "").lower()
-    s = re.sub(r"[^a-z0-9æøåéüöß\s\-]", " ", s)
-    return [t for t in s.split() if len(t) >= 2]
-
-_QA_WEIGHTS = {
-    "refinement": 3.0, "refinements": 3.0, "tracking": 2.0, "elastic": 2.0, "elastics": 2.0,
-    "class": 0.5, "ii": 0.8, "iii": 0.8, "attachment": 2.0, "attachments": 2.0, "ipr": 2.0,
-    "anchorage": 2.0, "torque": 2.0, "intrusion": 1.8, "extrusion": 1.8, "rotation": 1.2,
-    "crossbite": 1.8, "retention": 1.8, "scan": 1.2, "x-rays": 1.2, "cbct": 1.2, "trimline": 1.5,
-}
-
-def _qa_score(query_tokens: List[str], haystack_tokens: List[str]) -> float:
-    if not haystack_tokens:
-        return 0.0
-    hs = set(haystack_tokens)
-    score = 0.0
-    for t in set(query_tokens):
-        if t in hs:
-            score += 1.0 + _QA_WEIGHTS.get(t, 0.0)
-    return score
-
-def search_qa_json(query: str, k: int = 5) -> List[Dict[str, Any]]:
-    """Returnerer top-k Q&A-objekter (uændret struktur) fra mao_qa_rag_export.json."""
-    if not _QA_ITEMS:
-        return []
-    qtok = _qa_tokenize(query)
-    scored = []
-    for it in _QA_ITEMS:
-        hay = " ".join(
-            [it.get("question", "")]
-            + (it.get("synonyms", []) or [])
-            + [it.get("answer_markdown", "")]
+def style_hint(mode: str, lang: str) -> str:
+    mode = (mode or "markdown").lower()
+    if lang == "da":
+        if mode == "tech_brief":
+            return (
+                "SVARFORMAT (dansk): Returnér KUN en tekniker-klar receptblok i ren tekst, "
+                "max 10 linjer, uden markdown.\n"
+                "Brug labels og rækkefølgen her præcist:\n"
+                "MÅL: <1 linje>\n"
+                "INSTRUKTIONER: 1) <kort> 2) <kort> 3) <kort>\n"
+                "VEDLÆG: <hvilke fotos/annoteringer>\n"
+                "TJEK: <hvad skal verificeres i setup>\n"
+                "Ingen forklaringer eller ekstra sektioner."
+            )
+        if mode == "plain":
+            return "SVARFORMAT: Returnér samme indhold som normalt, men i ren tekst uden markdown, overskrifter eller emojis."
+        return ""
+    if mode == "tech_brief":
+        return (
+            "FORMAT: Return ONLY a technician-ready prescription block in plain text, "
+            "max 10 lines, no markdown. Use exact labels:\n"
+            "GOAL: <1 line>\n"
+            "INSTRUCTIONS: 1) <short> 2) <short> 3) <short>\n"
+            "ATTACH: <photos/annotations>\n"
+            "CHECK: <what to verify in the setup>\n"
+            "No extra sections."
         )
-        stokens = _qa_tokenize(hay)
-        s = _qa_score(qtok, stokens)
-        if s > 0:
-            scored.append((s, it))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [it for _, it in scored[:k]]
-
-def _qa_to_chunk(it: Dict[str, Any]) -> Dict[str, Any]:
-    # Formateres som et "chunk" så resten af din pipeline kan bruge det direkte
-    text = f"Q: {it.get('question','')}\n\n{it.get('answer_markdown','')}"
-    meta = {
-        "source": "Q&A",
-        "id": it.get("id"),
-        "title": it.get("question"),
-        "refs": it.get("refs", []),
-        "category": it.get("category"),
-        "tags": it.get("tags", []),
-    }
-    return {"text": text, "meta": meta}
+    if mode == "plain":
+        return "FORMAT: Same content as usual, but plain text only. No markdown."
+    return ""
 
 # =========================
 # LLM translation & calls
@@ -702,7 +603,7 @@ def _openai_complete_blocking(final_prompt: str) -> str:
         return "I could not generate a response due to an internal error."
 
 # =========================
-# Retrieval helpers
+# Retrieval helpers (generic metadata)
 # =========================
 def _label_from_meta(m):
     if isinstance(m, dict):
@@ -716,8 +617,7 @@ async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
     q = (query or "").strip()
     scored = []
     for item in _METADATA:
-        text = _extract_text_from_meta(item)
-        text = _strip_html(text)
+        text = _strip_html(_extract_text_from_meta(item))
         if not text:
             continue
         score = _keyword_score(text, q)
@@ -737,11 +637,153 @@ async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
     return top
 
 # =========================
+# Q&A JSON search (NEW)
+# =========================
+def _qa_log(msg: str):
+    try:
+        logger.info(f"[Q&A JSON] {msg}")
+    except Exception:
+        print(f"[Q&A JSON] {msg}")
+
+def _qa_load_items() -> List[Dict[str, Any]]:
+    if not QA_JSON_ENABLE:
+        _qa_log("disabled via QA_JSON_ENABLE")
+        return []
+    try:
+        with open(QA_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            _qa_log("unexpected JSON format (not a list) – disabling")
+            return []
+        _qa_log(f"loaded {len(data)} Q&A items from {QA_JSON_PATH}")
+        return data
+    except FileNotFoundError:
+        _qa_log(f"file not found: {QA_JSON_PATH} – disabling")
+    except Exception as e:
+        _qa_log(f"load error: {e} – disabling")
+    return []
+
+def _qa_tokenize(s: str) -> List[str]:
+    s = (s or "").lower()
+    s = re.sub(r"[^a-z0-9æøåéüöß\s\-]", " ", s)
+    return [t for t in s.split() if len(t) >= 2]
+
+_QA_WEIGHTS = {
+    "refinement": 3.0, "refinements": 3.0, "tracking": 2.0, "elastic": 2.0, "elastics": 2.0,
+    "class": 0.5, "ii": 0.8, "iii": 0.8, "attachment": 2.0, "attachments": 2.0, "ipr": 2.0,
+    "anchorage": 2.0, "torque": 2.0, "intrusion": 1.8, "extrusion": 1.8, "rotation": 1.2,
+    "crossbite": 1.8, "retention": 1.8, "scan": 1.2, "x-rays": 1.2, "cbct": 1.2, "trimline": 1.5,
+}
+
+def _qa_score(query_tokens: List[str], haystack_tokens: List[str]) -> float:
+    if not haystack_tokens:
+        return 0.0
+    hs = set(haystack_tokens)
+    score = 0.0
+    for t in set(query_tokens):
+        if t in hs:
+            score += 1.0 + _QA_WEIGHTS.get(t, 0.0)
+    return score
+
+@lru_cache(maxsize=512)
+def _qa_cached(norm_query: str, k: int) -> tuple:
+    if not _QA_ITEMS:
+        return tuple()
+    qtok = norm_query.split()
+    scored = []
+    for it in _QA_ITEMS:
+        hay = " ".join([it.get("question", "")] + (it.get("synonyms", []) or []) + [it.get("answer_markdown", "")])
+        stokens = _qa_tokenize(hay)
+        s = _qa_score(qtok, stokens)
+        if s > 0:
+            scored.append((s, it))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    light = tuple(json.dumps({"id": it.get("id"), "question": it.get("question")}, ensure_ascii=False) for _, it in scored[:k])
+    return light
+
+def search_qa_json(query: str, k: int = 5) -> List[Dict[str, Any]]:
+    if not _QA_ITEMS or not query:
+        return []
+    norm = " ".join(_qa_tokenize(query))
+    light = _qa_cached(norm, k)
+    if not light:
+        return []
+    ids = {json.loads(s)["id"] for s in light}
+    return [it for it in _QA_ITEMS if it.get("id") in ids]
+
+def _qa_to_chunk(it: Dict[str, Any]) -> Dict[str, Any]:
+    text = f"Q: {it.get('question','')}\n\n{it.get('answer_markdown','')}"
+    meta = {
+        "source": "Q&A",
+        "id": it.get("id"),
+        "title": it.get("question"),
+        "refs": it.get("refs", []),
+        "category": it.get("category"),
+        "tags": it.get("tags", []),
+    }
+    return {"text": text, "meta": meta}
+
+# =========================
+# MAO via anchors (prefer from METADATA)
+# =========================
+def _get_meta_value(item: Dict[str, Any], key: str):
+    if not isinstance(item, dict):
+        return None
+    if key in item:
+        return item.get(key)
+    m = item.get("meta")
+    if isinstance(m, dict) and key in m:
+        return m.get(key)
+    return None
+
+def _is_mao_item(item: Dict[str, Any]) -> bool:
+    src = (_get_meta_value(item, "source") or _get_meta_value(item, "SOURCE") or "").upper()
+    return "MAO" in src or src == "BOOK" or "MASTERING" in src
+
+def find_mao_by_anchors(anchor_ids: List[str], k_per_anchor: int = 2) -> List[Dict[str, Any]]:
+    if not _METADATA or not anchor_ids:
+        return []
+    want = set(anchor_ids)
+    hits: List[Dict[str, Any]] = []
+    for it in _METADATA:
+        if not _is_mao_item(it):
+            continue
+        a_id = _get_meta_value(it, "anchor_id") or _get_meta_value(it, "anchorId")
+        if a_id and a_id in want:
+            txt = _extract_text_from_meta(it)
+            if txt:
+                hits.append({"text": txt, "meta": it})
+    out: List[Dict[str, Any]] = []
+    per = {aid: 0 for aid in anchor_ids}
+    for h in hits:
+        aid = _get_meta_value(h["meta"], "anchor_id") or _get_meta_value(h["meta"], "anchorId")
+        if aid in per and per[aid] < k_per_anchor:
+            out.append(h); per[aid] += 1
+    return out
+
+async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
+    if not _METADATA:
+        return []
+    q = (query or "").strip()
+    scored = []
+    for item in _METADATA:
+        if not _is_mao_item(item):
+            continue
+        text = _strip_html(_extract_text_from_meta(item))
+        if not text:
+            continue
+        score = _keyword_score(text, q)
+        if score >= 2:
+            scored.append((score, text, item))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [{"text": s[1], "meta": s[2]} for s in scored[:k]]
+
+# =========================
 # Endpoints
 # =========================
 @app.get("/")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "qa_loaded": len(_QA_ITEMS), "metadata_loaded": len(_METADATA)}
 
 @app.post("/debug-token")
 async def debug_token(request: Request):
@@ -758,6 +800,11 @@ async def api_answer(request: Request):
 
     logger.info(f"Incoming body keys: {list(body.keys()) if isinstance(body, dict) else type(body)}")
 
+    # Output mode
+    output_mode = OUTPUT_MODE_DEFAULT
+    if isinstance(body, dict) and "output_mode" in body:
+        output_mode = str(body.get("output_mode") or OUTPUT_MODE_DEFAULT).lower()
+
     # 2) Extract Zoho-style IDs first (preferred flow)
     user_text = ""
     ticket_id = None
@@ -767,7 +814,6 @@ async def api_answer(request: Request):
         if "ticketId" in body and "question" in body:
             ticket_id = str(body.get("ticketId") or "").strip()
             contact_id = str(body.get("contactId") or "").strip() if body.get("contactId") else None
-
             txt = await sqlite_latest_thread_plaintext(ticket_id, contact_id)
             if txt:
                 user_text = txt
@@ -775,10 +821,8 @@ async def api_answer(request: Request):
             else:
                 user_text = str(body.get("question") or "").strip()
                 logger.info("Zoho ID-only: SQLite empty; using 'question' field.")
-
-        # classic fields (optional)
         if not user_text:
-            for key_guess in ["plainText", "text", "message", "content", "body"]:
+            for key_guess in ["plainText", "text", "message", "content", "body", "question"]:
                 if key_guess in body and isinstance(body[key_guess], str) and body[key_guess].strip():
                     user_text = body[key_guess].strip()
                     break
@@ -807,59 +851,76 @@ async def api_answer(request: Request):
         logger.info("Query translated to English for retrieval.")
         logger.info(f"retrieval_query(sample 200): {retrieval_query[:200]}")
 
-    # --- NEW: Q&A hits (from JSON) ---
-    qa_hits = [ _qa_to_chunk(x) for x in search_qa_json(retrieval_query, k=3) ]
+    # --- Q&A hits (JSON, prioritized) ---
+    qa_items = search_qa_json(retrieval_query, k=3)
+    qa_hits = [_qa_to_chunk(x) for x in qa_items]
 
-    try:
-        top_chunks = await get_top_chunks(retrieval_query)
-    except Exception as e:
-        logger.exception(f"get_top_chunks failed: {e}")
-        top_chunks = []
+    # --- MAO via anchors from Q&A refs ---
+    qa_refs = [aid for it in qa_items for aid in (it.get("refs") or []) if isinstance(aid, str) and aid.startswith("MAO:")]
+    mao_ref_hits = find_mao_by_anchors(qa_refs, k_per_anchor=1) if qa_refs else []
+
+    # --- metadata fallback (MAO keyword) ---
+    mao_kw_hits = []
+    if not mao_ref_hits:
+        try:
+            mao_kw_hits = await get_mao_top_chunks(retrieval_query, k=3)
+        except Exception as e:
+            logger.info(f"MAO keyword retrieval failed: {e}")
+
+    # --- historical tone (last thread), optional ---
+    history_hits = []
+    if ticket_id:
+        hist = await sqlite_latest_thread_plaintext(ticket_id, contact_id)
+        if hist:
+            history_hits = [{"text": hist[:1500], "meta": {"source": "History", "title": "Recent thread"}}]
+
+    # Merge in fixed order
+    combined_chunks = qa_hits[:3] + mao_ref_hits[:3] + mao_kw_hits[:2] + history_hits[:1]
 
     # 5) Failsafe if no context at all
-    if not qa_hits and not top_chunks:
+    if not combined_chunks:
         safe_generic = {
             "da": (
                 "Grundprotokol når kontekst mangler:\n"
                 "1) Screening/diagnose → 2) Plan (staging, IPR, attachments) → 3) Start → 4) Kontroller/tracking → 5) Refinement → 6) Retention.\n"
                 "Næste skridt: indlæs flere kildedata i RAG for mere målrettet svar."
             ),
-            "de": (
-                "Basisprotokoll bei fehlendem Kontext:\n"
-                "1) Screening/Diagnose → 2) Planung (Staging, IPR, Attachments) → 3) Start → 4) Kontrollen/Tracking → 5) Refinement → 6) Retention.\n"
-                "Nächste Schritte: mehr Quelldaten ins RAG laden."
-            ),
-            "fr": (
-                "Protocole de base en l’absence de contexte :\n"
-                "1) Dépistage/diagnostic → 2) Planification (staging, IPR, attachments) → 3) Démarrage → 4) Contrôles/tracking → 5) Refinement → 6) Rétention.\n"
-                "Étapes suivantes : charger davantage de sources dans le RAG."
-            ),
             "en": (
                 "Baseline protocol when context is missing:\n"
                 "1) Screening/diagnosis → 2) Planning (staging, IPR, attachments) → 3) Start → 4) Reviews/tracking → 5) Refinement → 6) Retention.\n"
-                "Next steps: load more sources into RAG."
+                "Next steps: load more sources into the RAG."
             ),
         }
         sources = []
+        answer = safe_generic.get(lang, safe_generic["en"])
         return {
-            "finalAnswer": safe_generic.get(lang, safe_generic["en"]),
+            "finalAnswer": answer,
+            "finalAnswerMarkdown": answer,
+            "finalAnswerPlain": md_to_plain(answer),
             "language": lang,
             "role": role_disp,
             "sources": sources,
             "ticketId": ticket_id,
             "timestamp": datetime.utcnow().isoformat() + "Z",
-            # Zoho-friendly alias:
-            "message": {"content": safe_generic.get(lang, safe_generic["en"]), "language": lang}
+            "message": {"content": answer, "language": lang}
         }
 
-    # Combine Q&A chunks first, then metadata chunks
-    combined_chunks = qa_hits + top_chunks
+    # Context text
+    def _clip(txt: str, max_len: int = 1200) -> str:
+        return (txt[:max_len] + "…") if len(txt) > max_len else txt
 
-    context = "\n\n".join(ch.get("text", "") if isinstance(ch, dict) else str(ch) for ch in combined_chunks)[:8000]
+    context = "\n\n".join(_clip(ch.get("text", "") if isinstance(ch, dict) else str(ch)) for ch in combined_chunks)[:8000]
 
     # 6) Compose final prompt
+    style = style_hint(output_mode, lang)
     final_prompt = (
         f"{system_prompt}\n\n"
+        "RANKED CONTEXT POLICY\n"
+        "• Q&A evidence = primary clinical guidance.\n"
+        "• MAO (by anchors) = authoritative. If conflict, prefer MAO.\n"
+        "• MAO (keyword) = secondary fallback.\n"
+        "• History = tone only; do not override facts.\n\n"
+        f"{style}\n\n"
         f"IMPORTANT: Use only the information from 'Relevant context' below. "
         f"Do not invent names, case numbers or internal details that are not present in the context.\n\n"
         f"User message:\n{user_text}\n\n"
@@ -870,36 +931,44 @@ async def api_answer(request: Request):
 
     # 7) LLM
     try:
-        answer = await get_rag_answer(final_prompt)
+        answer_markdown = await get_rag_answer(final_prompt)
     except Exception as e:
         logger.exception(f"OpenAI call failed: {e}")
-        answer = (
+        answer_markdown = (
             "Beklager, der opstod en fejl under genereringen af svaret." if lang == "da"
-            else "Es ist ein Fehler bei der Antwortgenerierung aufgetreten." if lang == "de"
-            else "Désolé, une erreur s’est produite lors de la génération de la réponse." if lang == "fr"
             else "Sorry, an error occurred while generating the answer."
         )
 
-    # 8) Sources (show top of each group)
+    answer_plain = md_to_plain(answer_markdown)
+    if output_mode == "plain":
+        answer_out = answer_plain
+    elif output_mode == "tech_brief":
+        answer_out = answer_plain  # model er instrueret til ren tekst; dette er sikkerhedsnet
+    else:
+        answer_out = answer_markdown
+
+    # 8) Sources
     sources = []
-    for ch in (qa_hits[:2] + top_chunks[:2]):
+    for ch in (qa_hits[:2] + mao_ref_hits[:2] + mao_kw_hits[:1] + history_hits[:1]):
         meta = ch.get("meta", {})
         label = _label_from_meta(meta)
         url = meta.get("url") if isinstance(meta, dict) else None
-        # include refs if present (useful for audit)
-        refs = meta.get("refs") if isinstance(meta, dict) else None
         src = {"label": label, "url": url}
-        if refs:
-            src["refs"] = refs
+        if isinstance(meta, dict) and meta.get("refs"):
+            src["refs"] = meta.get("refs")
+        # include anchor_id if present in MAO hit
+        if isinstance(meta, dict) and (meta.get("anchor_id") or meta.get("anchorId")):
+            src["anchor_id"] = meta.get("anchor_id") or meta.get("anchorId")
         sources.append(src)
 
     return {
-        "finalAnswer": answer,
+        "finalAnswer": answer_out,
+        "finalAnswerMarkdown": answer_markdown,
+        "finalAnswerPlain": answer_plain,
         "language": lang,
         "role": role_disp,
         "sources": sources,
         "ticketId": ticket_id,
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        # Zoho-friendly alias
-        "message": {"content": answer, "language": lang}
+        "message": {"content": answer_out, "language": lang}
     }
