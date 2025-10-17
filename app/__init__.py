@@ -5,8 +5,6 @@ import logging
 import asyncio
 import hmac
 import re
-import hashlib
-from collections import deque
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from functools import lru_cache
@@ -15,15 +13,12 @@ try:
     import faiss  # type: ignore
 except Exception:
     faiss = None
-
 try:
     import tiktoken  # type: ignore
 except Exception:
     tiktoken = None
 
-import aiohttp
 import aiosqlite
-
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -32,27 +27,30 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 # =========================
 # Logging & Config
 # =========================
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+)
 logger = logging.getLogger("rag-app")
 
 FAISS_INDEX_FILE   = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 METADATA_FILE      = os.getenv("METADATA_FILE", "metadata.json")
-LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/mnt/data/knowledge.sqlite")
+LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 
-RAG_BEARER_TOKEN   = os.getenv("RAG_BEARER_TOKEN", "")
+RAG_BEARER_TOKEN   = os.getenv("RAG_BEARER_TOKEN", "").strip()
 
-# Prefer OPENAI_MODEL; fall back to legacy OPENAI_CHAT_MODEL if present
-OPENAI_MODEL       = os.getenv("OPENAI_MODEL") or os.getenv("OPENAI_CHAT_MODEL") or "gpt-4o-mini"
-OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
+# OpenAI (modern v1 SDK, chat.completions)
+OPENAI_MODEL       = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "").strip()
 
-# -------- Dropbox creds (both modes supported) --------
-DROPBOX_ACCESS_TOKEN  = os.getenv("DROPBOX_ACCESS_TOKEN", "")
-DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH", "")
-DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID", "")
-DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET", "")
-DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
+# Dropbox creds
+DROPBOX_ACCESS_TOKEN  = os.getenv("DROPBOX_ACCESS_TOKEN", "").strip()
+DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH", "").strip()  # e.g. /Apps/AlignerService/knowledge.sqlite
+DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID", "").strip()
+DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET", "").strip()
+DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "").strip()
 
-# -------- Q&A JSON integration (env-config) --------
+# Q&A JSON integration
 QA_JSON_PATH   = os.getenv("QA_JSON_PATH", "mao_qa_rag_export.json")
 QA_JSON_ENABLE = os.getenv("QA_JSON_ENABLE", "1") == "1"
 
@@ -63,12 +61,7 @@ OUTPUT_MODE_DEFAULT = os.getenv("OUTPUT_MODE", "markdown").lower()
 _FAISS_INDEX = None
 _METADATA: List[Dict[str, Any]] = []
 _SQLITE_OK = False
-
-# Q&A globals
 _QA_ITEMS: List[Dict[str, Any]] = []
-
-# Anti-echo memory of last few answers (plain, clipped)
-_LAST_HASHES: "deque[str]" = deque(maxlen=5)
 
 # =========================
 # FastAPI & CORS
@@ -105,6 +98,7 @@ async def on_startup():
     else:
         logger.error("RAG_BEARER_TOKEN is missing!")
 
+    # ensure dir for local db
     try:
         base = os.path.dirname(LOCAL_DB_PATH)
         if base:
@@ -115,10 +109,9 @@ async def on_startup():
     try:
         await download_db()
         await init_db()
-        # --- load Q&A JSON (new) ---
+        # load Q&A JSON
         global _QA_ITEMS
         _QA_ITEMS = _qa_load_items()
-        logger.info(f"Q&A loaded: {len(_QA_ITEMS)}")
         logger.info("RAG startup complete")
     except Exception as e:
         logger.exception(f"Startup failed: {e}")
@@ -129,21 +122,33 @@ async def on_startup():
 def detect_language(text: str) -> str:
     if not text:
         return "en"
-    lowered = text.lower()
-    # da
-    if any(ch in lowered for ch in ["æ", "ø", "å"]):
+    t = (text or "").lower()
+
+    # Hard cues
+    if any(ch in t for ch in ["æ", "ø", "å"]):
         return "da"
-    if sum(1 for w in [" og ", " jeg ", " ikke", " det ", " der ", " som ", " tak", " klinik", "tandlæ", "ortodont"] if w in lowered) >= 2:
+
+    # Soft cues for Danish, German, French
+    da_cues = [
+        " og ", " ikke", " det ", " der ", " som ", " tak", " klinik", "tandlæ", "ortodont",
+        "forankring", "elastik", "elastikker", "placering", "overjet", "ipr", "krydsbid",
+        "åben bid", "dybt bid", "refinement", "staging", "fasering"
+    ]
+    de_cues = [" und ", " nicht", " praxis", "zahn", "kfo", "empfang"]
+    fr_cues = [" bonjour", " merci", " cabinet", " clinique", " orthodont", " dentiste"]
+
+    da_hits = sum(1 for w in da_cues if w in t)
+    de_hits = sum(1 for w in de_cues if w in t)
+    fr_hits = sum(1 for w in fr_cues if w in t)
+
+    # Bias to Danish for ortho jargon even if “Class” etc. is English
+    if da_hits >= 1 and (" class " in t or " overjet" in t or " ipr" in t):
         return "da"
-    # de
-    if any(ch in lowered for ch in ["ä", "ö", "ü", "ß"]):
+    if da_hits >= 2:
+        return "da"
+    if de_hits >= 2:
         return "de"
-    if sum(1 for w in [" und ", " nicht", " bitte", " danke", " praxis", "zahn", "kfo", "empfang"] if w in lowered) >= 2:
-        return "de"
-    # fr
-    if any(ch in lowered for ch in ["à", "â", "ç", "é", "è", "ê", "ë", "î", "ï", "ô", "œ", "ù", "û", "ü", "ÿ"]):
-        return "fr"
-    if sum(1 for w in [" bonjour", " merci", " cabinet", " clinique", " orthodont", " dentiste"] if w in lowered) >= 2:
+    if fr_hits >= 2:
         return "fr"
     return "en"
 
@@ -169,9 +174,8 @@ def detect_role(text: str, lang: str) -> str:
             "receptionist": ["receptionist", "front desk", "practice manager"],
             "team": ["team", "practice team", "clinic team"],
         },
-        "de": {}, "fr": {}
     }
-    lang_map = lex.get(lang, lex["en"]) or lex["en"]
+    lang_map = lex.get(lang, lex["en"])
     scores = {r: 0 for r in ["dentist", "orthodontist", "assistant", "hygienist", "receptionist", "team"]}
     for role, keys in lang_map.items():
         for kw in keys:
@@ -189,8 +193,6 @@ def role_label(lang: str, role: str) -> str:
     labels = {
         "da": {"dentist": "tandlæge","orthodontist":"ortodontist","assistant":"klinikassistent","hygienist":"tandplejer","receptionist":"receptionist","team":"klinikteam","clinician":"kliniker"},
         "en": {"dentist": "dentist","orthodontist":"orthodontist","assistant":"dental assistant","hygienist":"dental hygienist","receptionist":"receptionist","team":"clinic team","clinician":"clinician"},
-        "de": {"clinician":"Behandler/in"},
-        "fr": {"clinician":"praticien(ne)"},
     }
     return labels.get(lang, labels["en"]).get(role, role)
 
@@ -387,9 +389,7 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
                                     if tval and (not best_time or str(tval) > str(best_time)):
                                         best_text, best_time = txt, tval
                                     elif not best_text:
-                                        best_text = txt
-                                        best_time = tval
-                                logger.info(f"SQLite hit: table={table}, tcol={tcol}, kcol={kcol}, ccol={ccol}, time={timecol}")
+                                        best_text, best_time = txt, tval
                 except Exception as e:
                     logger.info(f"SQLite query failed on {table}: {e}")
                     continue
@@ -504,131 +504,7 @@ def style_hint(mode: str, lang: str) -> str:
     return ""
 
 # =========================
-# LLM translation & calls
-# =========================
-async def translate_to_english_if_needed(text: str, lang: str) -> str:
-    if lang == "en" or not text:
-        return text
-    prompt = (
-        "Translate the following text to English only. "
-        "Do not add explanations or metadata. Output only the translated text.\n\n"
-        f"Text:\n{text}"
-    )
-    out = await _llm_short(prompt)
-    return out.strip() if out else text
-
-async def _llm_short(user_prompt: str) -> str:
-    if not (OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")):
-        logger.warning("OPENAI_API_KEY missing for translation")
-        return ""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _openai_complete_blocking_short, user_prompt)
-
-def _openai_complete_blocking_short(user_prompt: str) -> str:
-    try:
-        from openai import OpenAI  # type: ignore
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", OPENAI_API_KEY))
-        resp = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "You translate text precisely. Return only the translated text."},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.1,
-        )
-        return (resp.choices[0].message.content or "").strip()
-    except Exception as e_modern:
-        logger.info(f"Modern OpenAI short-call not used ({e_modern}); trying legacy...")
-    try:
-        import openai  # type: ignore
-        openai.api_key = os.getenv("OPENAI_API_KEY", OPENAI_API_KEY)
-        resp = openai.ChatCompletion.create(
-            model=os.getenv("OPENAI_MODEL", OPENAI_MODEL),
-            messages=[
-                {"role": "system", "content": "You translate text precisely. Return only the translated text."},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.1,
-        )
-        return (resp["choices"][0]["message"]["content"] or "").strip()
-    except Exception as e_legacy:
-        logger.exception(f"Short OpenAI call failed: {e_legacy}")
-        return ""
-
-async def get_rag_answer(final_prompt: str) -> str:
-    if not OPENAI_API_KEY and not os.getenv("OPENAI_API_KEY"):
-        logger.warning("OPENAI_API_KEY missing; returning fallback")
-        return "I cannot reach the language model right now."
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _openai_complete_blocking, final_prompt)
-
-def _openai_complete_blocking(final_prompt: str) -> str:
-    try:
-        from openai import OpenAI  # type: ignore
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", OPENAI_API_KEY))
-        resp = client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": final_prompt},
-            ],
-            temperature=0.1,
-        )
-        return (resp.choices[0].message.content or "").strip()
-    except Exception as e_modern:
-        logger.info(f"Modern OpenAI client not used ({e_modern}); trying legacy...")
-    try:
-        import openai  # type: ignore
-        openai.api_key = os.getenv("OPENAI_API_KEY", OPENAI_API_KEY)
-        resp = openai.ChatCompletion.create(
-            model=os.getenv("OPENAI_MODEL", OPENAI_MODEL),
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": final_prompt},
-            ],
-            temperature=0.1,
-        )
-        return (resp["choices"][0]["message"]["content"] or "").strip()
-    except Exception as e_legacy:
-        logger.exception(f"OpenAI call failed: {e_legacy}")
-        return "I could not generate a response due to an internal error."
-
-# =========================
-# Retrieval helpers (generic metadata)
-# =========================
-def _label_from_meta(m):
-    if isinstance(m, dict):
-        return m.get("title") or m.get("source") or m.get("path") or m.get("url") or m.get("id") or "metadata"
-    return "metadata"
-
-async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
-    if not _METADATA:
-        logger.info("No metadata loaded; returning empty retrieval result.")
-        return []
-    q = (query or "").strip()
-    scored = []
-    for item in _METADATA:
-        text = _strip_html(_extract_text_from_meta(item))
-        if not text:
-            continue
-        score = _keyword_score(text, q)
-        if score >= 2:
-            scored.append((score, text, item))
-    if not scored:
-        logger.info("No positive keyword matches in metadata for this query.")
-        return []
-    scored.sort(key=lambda x: x[0], reverse=True)
-    try:
-        preview = ", ".join(_label_from_meta(s[2]) for s in scored[:3])
-        logger.info(f"Top source preview: {preview}")
-    except Exception:
-        pass
-    top = [{"text": s[1], "meta": s[2]} for s in scored[:k]]
-    logger.info(f"Retrieved chunks: {len(top)} (from {len(_METADATA)} metadata items)")
-    return top
-
-# =========================
-# Q&A JSON search (NEW)
+# Q&A JSON search
 # =========================
 def _qa_log(msg: str):
     try:
@@ -770,6 +646,65 @@ async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
     return [{"text": s[1], "meta": s[2]} for s in scored[:k]]
 
 # =========================
+# Retrieval helpers (generic metadata)
+# =========================
+def _label_from_meta(m):
+    if isinstance(m, dict):
+        return m.get("title") or m.get("source") or m.get("path") or m.get("url") or m.get("id") or "metadata"
+    return "metadata"
+
+# =========================
+# LLM calls (OpenAI v1)
+# =========================
+async def _llm_short(user_prompt: str) -> str:
+    if not (OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")):
+        logger.warning("OPENAI_API_KEY missing for translation")
+        return ""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _openai_complete_blocking_short, user_prompt)
+
+def _openai_complete_blocking_short(user_prompt: str) -> str:
+    try:
+        from openai import OpenAI  # type: ignore
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", OPENAI_API_KEY))
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "You translate text precisely. Return only the translated text."},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.0,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e_modern:
+        logger.exception(f"Short OpenAI call failed: {e_modern}")
+        return ""
+
+async def get_rag_answer(final_prompt: str) -> str:
+    if not OPENAI_API_KEY and not os.getenv("OPENAI_API_KEY"):
+        logger.warning("OPENAI_API_KEY missing; returning fallback")
+        return "I cannot reach the language model right now."
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _openai_complete_blocking, final_prompt)
+
+def _openai_complete_blocking(final_prompt: str) -> str:
+    try:
+        from openai import OpenAI  # type: ignore
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", OPENAI_API_KEY))
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": final_prompt},
+            ],
+            temperature=0.2,
+        )
+        return (resp.choices[0].message.content or "").strip()
+    except Exception as e_modern:
+        logger.exception(f"OpenAI call failed: {e_modern}")
+        return "I could not generate a response due to an internal error."
+
+# =========================
 # Endpoints
 # =========================
 @app.get("/")
@@ -831,12 +766,27 @@ async def api_answer(request: Request):
     logger.info(f"user_text(sample 300): {user_text[:300]}")
 
     # 3) Language + Role + Prompt
-    lang = detect_language(user_text)
+    payload_lang = (body.get("lang") or "").strip().lower() if isinstance(body, dict) else ""
+    if payload_lang in {"da", "en", "de", "fr"}:
+        lang = payload_lang
+    else:
+        lang = detect_language(user_text)
     role = detect_role(user_text, lang)
     role_disp = role_label(lang, role)
     system_prompt = make_system_prompt(lang, role)
 
     # 4) Cross-lingual retrieval
+    async def translate_to_english_if_needed(text: str, lang: str) -> str:
+        if lang == "en" or not text:
+            return text
+        prompt = (
+            "Translate the following text to English only. "
+            "Do not add explanations or metadata. Output only the translated text.\n\n"
+            f"Text:\n{text}"
+        )
+        out = await _llm_short(prompt)
+        return out.strip() if out else text
+
     retrieval_query = await translate_to_english_if_needed(user_text, lang)
     if retrieval_query != user_text:
         logger.info("Query translated to English for retrieval.")
@@ -846,8 +796,9 @@ async def api_answer(request: Request):
     qa_items = search_qa_json(retrieval_query, k=3)
     qa_hits = [_qa_to_chunk(x) for x in qa_items]
 
-    # --- MAO via anchors from Q&A refs (force include if available) ---
-    qa_refs = [aid for it in qa_items for aid in (it.get("refs") or []) if isinstance(aid, str) and aid.startswith("MAO:")]
+    # --- MAO via anchors from Q&A refs ---
+    qa_refs = [aid for it in qa_items for aid in (it.get("refs") or [])
+               if isinstance(aid, str) and aid.startswith("MAO:")]
     mao_ref_hits = find_mao_by_anchors(qa_refs, k_per_anchor=1) if qa_refs else []
 
     # --- metadata fallback (MAO keyword) ---
@@ -865,8 +816,8 @@ async def api_answer(request: Request):
         if hist:
             history_hits = [{"text": hist[:1500], "meta": {"source": "History", "title": "Recent thread"}}]
 
-    # Merge in fixed order; always include up to 2 MAO refs when present
-    combined_chunks = qa_hits[:3] + mao_ref_hits[:2] + mao_kw_hits[:2] + history_hits[:1]
+    # Merge in fixed order
+    combined_chunks = qa_hits[:3] + mao_ref_hits[:3] + mao_kw_hits[:2] + history_hits[:1]
 
     # 5) Failsafe if no context at all
     if not combined_chunks:
@@ -882,7 +833,6 @@ async def api_answer(request: Request):
                 "Next steps: load more sources into the RAG."
             ),
         }
-        sources = []
         answer = safe_generic.get(lang, safe_generic["en"])
         return {
             "finalAnswer": answer,
@@ -890,7 +840,7 @@ async def api_answer(request: Request):
             "finalAnswerPlain": md_to_plain(answer),
             "language": lang,
             "role": role_disp,
-            "sources": sources,
+            "sources": [],
             "ticketId": ticket_id,
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "message": {"content": answer, "language": lang}
@@ -902,23 +852,16 @@ async def api_answer(request: Request):
 
     context = "\n\n".join(_clip(ch.get("text", "") if isinstance(ch, dict) else str(ch)) for ch in combined_chunks)[:8000]
 
-    # 6) Compose final prompt (with strict policies)
+    # 6) Compose final prompt
     style = style_hint(output_mode, lang)
-    language_policy = f"LANGUAGE POLICY: Respond strictly in {lang}. If context is in another language, translate clinically and naturally to {lang}."
-    ranked_policy = (
+    final_prompt = (
+        f"{system_prompt}\n\n"
         "RANKED CONTEXT POLICY\n"
         "• Q&A evidence = primary clinical guidance.\n"
         "• MAO (by anchors) = authoritative. If conflict, prefer MAO.\n"
         "• MAO (keyword) = secondary fallback.\n"
-        "• History = tone only; do not override facts.\n"
-        "• If evidence is weak or absent: explicitly state 'insufficient context' and DO NOT invent numeric parameters (mm IPR, degrees, hours/day, forces).\n"
-    )
-
-    final_prompt = (
-        f"{system_prompt}\n\n"
-        f"{ranked_policy}"
-        f"{style}\n"
-        f"{language_policy}\n\n"
+        "• History = tone only; do not override facts.\n\n"
+        f"{style}\n\n"
         f"IMPORTANT: Use only the information from 'Relevant context' below. "
         f"Do not invent names, case numbers or internal details that are not present in the context.\n\n"
         f"User message:\n{user_text}\n\n"
@@ -941,32 +884,12 @@ async def api_answer(request: Request):
     if output_mode == "plain":
         answer_out = answer_plain
     elif output_mode == "tech_brief":
-        answer_out = answer_plain  # model instrueres til ren tekst; dette er sikkerhedsnet
+        # model er instrueret til ren tekst; dette er sikkerhedsnet
+        answer_out = answer_plain
     else:
         answer_out = answer_markdown
 
-    # 8) Anti-echo: hvis identisk med nylige svar, vælg safe fallback
-    clip = (answer_plain or "").strip()[:400]
-    if clip:
-        h = hashlib.sha256(clip.encode("utf-8")).hexdigest()
-        if h in _LAST_HASHES:
-            logger.info("Anti-echo trigger: answer similar to recent output; returning safe generic.")
-            safe_generic = {
-                "da": (
-                    "Konteksten er utilstrækkelig til specifikke tal. Angiv mål (intrusion/extrusion, elastikmønster, IPR-lokation) "
-                    "og upload relevante noter/bogmærker, så returnerer jeg en præcis receptblok."
-                ),
-                "en": (
-                    "Context is insufficient for specific parameters. Provide goals (intrusion/extrusion, elastics pattern, IPR location) "
-                    "and upload pertinent notes/anchors for a precise prescription block."
-                ),
-            }
-            answer_out = safe_generic.get(lang, safe_generic["en"])
-            answer_markdown = answer_out
-            answer_plain = answer_out
-        _LAST_HASHES.append(h)
-
-    # 9) Sources
+    # 8) Sources
     sources = []
     for ch in (qa_hits[:2] + mao_ref_hits[:2] + mao_kw_hits[:1] + history_hits[:1]):
         meta = ch.get("meta", {})
