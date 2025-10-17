@@ -5,15 +5,17 @@ import logging
 import asyncio
 import hmac
 import re
+import hashlib
+from collections import deque
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from functools import lru_cache
 
-import numpy as np  # optional
 try:
     import faiss  # type: ignore
 except Exception:
     faiss = None
+
 try:
     import tiktoken  # type: ignore
 except Exception:
@@ -35,11 +37,12 @@ logger = logging.getLogger("rag-app")
 
 FAISS_INDEX_FILE   = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 METADATA_FILE      = os.getenv("METADATA_FILE", "metadata.json")
-LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/mnt/data/rag.sqlite3")
+LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/mnt/data/knowledge.sqlite")
 
 RAG_BEARER_TOKEN   = os.getenv("RAG_BEARER_TOKEN", "")
 
-OPENAI_MODEL       = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# Prefer OPENAI_MODEL; fall back to legacy OPENAI_CHAT_MODEL if present
+OPENAI_MODEL       = os.getenv("OPENAI_MODEL") or os.getenv("OPENAI_CHAT_MODEL") or "gpt-4o-mini"
 OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
 
 # -------- Dropbox creds (both modes supported) --------
@@ -63,6 +66,9 @@ _SQLITE_OK = False
 
 # Q&A globals
 _QA_ITEMS: List[Dict[str, Any]] = []
+
+# Anti-echo memory of last few answers (plain, clipped)
+_LAST_HASHES: "deque[str]" = deque(maxlen=5)
 
 # =========================
 # FastAPI & CORS
@@ -90,40 +96,6 @@ def require_rag_token(credentials: HTTPAuthorizationCredentials = Depends(bearer
     return True
 
 # =========================
-# Boilerplate stripper & staff detection
-# =========================
-STAFF_PAT = re.compile(
-    r"\bhelle\s*hatt\b|\bkarin\b|\bkarin\s*rasmussen\b|\bpriyanka\b|\byazmina\b|@alignerservice\.com\b",
-    re.IGNORECASE
-)
-
-BOILER = re.compile(
-    r"(i\s*vender\s*tilbage\s*til\s*dig\s*så\s*snart\s*setup\s*er\s*klar\s*til\s*din\s*godkendelse|"
-    r"book\s*release\s*mastering\s*aligner\s*orthodontics.*|"
-    r"can\s*be\s*ordered\s*at:?\s*mastering\s*aligner\s*orthodontics\s*\|\s*alignerservice\.com.*|"
-    r"our\s*new\s*mail\s*address\s*for\s*collaborator\s*search.*|"
-    r"collaborator\s*name\s*is\s*alignerservice\s*global\s*tps.*|"
-    r"kind\s*regards\s*/\s*venlig\s*hilsen\s*/\s*mit\s*freundlichen\s*grüßen.*?(karin|helle).*?alignerservice\.com.*|"
-    r"disclaimer\s*alignerservice\s*consists\s*of\s*dentists.*?individual\s*results\s*will\s*vary\.)",
-    re.IGNORECASE | re.DOTALL
-)
-
-def cleanup_text(s: Optional[str]) -> str:
-    if not s:
-        return ""
-    s2 = BOILER.sub(" ", s)
-    s2 = re.sub(r"[\r\n]+", " ", s2)
-    s2 = re.sub(r"\s+", " ", s2).strip()
-    return s2
-
-def normalize_cell(s: Optional[str]) -> str:
-    if not s:
-        return ""
-    s2 = re.sub(r"[\r\n]+", " ", s)
-    s2 = re.sub(r"\s+", " ", s2).strip()
-    return s2
-
-# =========================
 # Startup
 # =========================
 @app.on_event("startup")
@@ -143,12 +115,10 @@ async def on_startup():
     try:
         await download_db()
         await init_db()
-        # Make sure schema/FTS exist and DB is cleaned + Q&A materialized
-        await ensure_schema_and_cleanup()
-        await materialize_qna_pairs()
         # --- load Q&A JSON (new) ---
         global _QA_ITEMS
         _QA_ITEMS = _qa_load_items()
+        logger.info(f"Q&A loaded: {len(_QA_ITEMS)}")
         logger.info("RAG startup complete")
     except Exception as e:
         logger.exception(f"Startup failed: {e}")
@@ -160,14 +130,17 @@ def detect_language(text: str) -> str:
     if not text:
         return "en"
     lowered = text.lower()
+    # da
     if any(ch in lowered for ch in ["æ", "ø", "å"]):
         return "da"
     if sum(1 for w in [" og ", " jeg ", " ikke", " det ", " der ", " som ", " tak", " klinik", "tandlæ", "ortodont"] if w in lowered) >= 2:
         return "da"
+    # de
     if any(ch in lowered for ch in ["ä", "ö", "ü", "ß"]):
         return "de"
     if sum(1 for w in [" und ", " nicht", " bitte", " danke", " praxis", "zahn", "kfo", "empfang"] if w in lowered) >= 2:
         return "de"
+    # fr
     if any(ch in lowered for ch in ["à", "â", "ç", "é", "è", "ê", "ë", "î", "ï", "ô", "œ", "ù", "û", "ü", "ÿ"]):
         return "fr"
     if sum(1 for w in [" bonjour", " merci", " cabinet", " clinique", " orthodont", " dentiste"] if w in lowered) >= 2:
@@ -196,8 +169,9 @@ def detect_role(text: str, lang: str) -> str:
             "receptionist": ["receptionist", "front desk", "practice manager"],
             "team": ["team", "practice team", "clinic team"],
         },
+        "de": {}, "fr": {}
     }
-    lang_map = lex.get(lang, lex["en"])
+    lang_map = lex.get(lang, lex["en"]) or lex["en"]
     scores = {r: 0 for r in ["dentist", "orthodontist", "assistant", "hygienist", "receptionist", "team"]}
     for role, keys in lang_map.items():
         for kw in keys:
@@ -215,6 +189,8 @@ def role_label(lang: str, role: str) -> str:
     labels = {
         "da": {"dentist": "tandlæge","orthodontist":"ortodontist","assistant":"klinikassistent","hygienist":"tandplejer","receptionist":"receptionist","team":"klinikteam","clinician":"kliniker"},
         "en": {"dentist": "dentist","orthodontist":"orthodontist","assistant":"dental assistant","hygienist":"dental hygienist","receptionist":"receptionist","team":"clinic team","clinician":"clinician"},
+        "de": {"clinician":"Behandler/in"},
+        "fr": {"clinician":"praticien(ne)"},
     }
     return labels.get(lang, labels["en"]).get(role, role)
 
@@ -341,190 +317,6 @@ async def init_db():
     except Exception as e:
         _SQLITE_OK = False
         logger.exception(f"SQLite check failed: {e}")
-
-# =========================
-# Schema, cleaning, FTS5, Q&A materialization
-# =========================
-SCHEMA_SQL = """
-PRAGMA journal_mode=WAL;
-PRAGMA synchronous=NORMAL;
-
-CREATE TABLE IF NOT EXISTS messages (
-  id        TEXT PRIMARY KEY,
-  ticketId  TEXT NOT NULL,
-  author    TEXT,
-  direction TEXT,
-  plainText TEXT NOT NULL,
-  createdAt TEXT NOT NULL,
-  language  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS qna_pairs_inferred (
-  ticketId           TEXT NOT NULL,
-  subject_template   TEXT,
-  inbound_question   TEXT NOT NULL,
-  outbound_answer    TEXT NOT NULL,
-  intent             TEXT DEFAULT '',
-  tags               TEXT DEFAULT '[]',
-  placeholders_json  TEXT DEFAULT '{}',
-  links_json         TEXT DEFAULT '[]',
-  en                 TEXT,
-  createdAt_q        TEXT,
-  createdAt_a        TEXT
-);
-
-CREATE TABLE IF NOT EXISTS tickets (
-  ticketId TEXT PRIMARY KEY,
-  subject  TEXT
-);
-"""
-
-INDEX_SQL = """
-CREATE INDEX IF NOT EXISTS idx_messages_ticket_time ON messages(ticketId, createdAt);
-CREATE INDEX IF NOT EXISTS idx_messages_author_time ON messages(author, createdAt);
-CREATE INDEX IF NOT EXISTS idx_qna_ticket ON qna_pairs_inferred(ticketId);
-CREATE INDEX IF NOT EXISTS idx_qna_intent ON qna_pairs_inferred(intent);
-"""
-
-FTS_BOOTSTRAP_SQL = """
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-  plainText,
-  content='messages',
-  content_rowid='id'
-);
-"""
-
-TRIGGERS_SQL = """
-DROP TRIGGER IF EXISTS messages_ai;
-DROP TRIGGER IF EXISTS messages_ad;
-DROP TRIGGER IF EXISTS messages_au;
-
-CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
-  INSERT INTO messages_fts(rowid, plainText) VALUES (new.id, new.plainText);
-END;
-
-CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
-  INSERT INTO messages_fts(messages_fts, rowid, plainText) VALUES('delete', old.id, old.plainText);
-END;
-
-CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
-  INSERT INTO messages_fts(messages_fts, rowid, plainText) VALUES('delete', old.id, old.plainText);
-  INSERT INTO messages_fts(rowid, plainText) VALUES (new.id, new.plainText);
-END;
-"""
-
-async def ensure_schema_and_cleanup():
-    if not _SQLITE_OK:
-        logger.warning("ensure_schema_and_cleanup(): SQLite not available")
-        return
-    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-        await db.executescript(SCHEMA_SQL)
-        await db.executescript(INDEX_SQL)
-        await db.executescript(FTS_BOOTSTRAP_SQL)
-        # Seed FTS if empty
-        try:
-            row = await (await db.execute("SELECT count(*) FROM messages_fts")).fetchone()
-            fts_n = row[0] if row else 0
-        except Exception:
-            fts_n = 0
-        if fts_n == 0:
-            await db.execute("INSERT INTO messages_fts(rowid, plainText) SELECT id, plainText FROM messages")
-        await db.executescript(TRIGGERS_SQL)
-        await db.commit()
-
-    # Clean messages in-place where needed (light pass, safe)
-    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        # Find candidates that likely contain boilerplate (cheap LIKE guards)
-        sql = """
-        SELECT id, plainText FROM messages
-        WHERE plainText LIKE '%AlignerService%' OR plainText LIKE '%Disclaimer%' OR plainText LIKE '%Mastering Aligner Orthodontics%'
-              OR plainText LIKE '%venlig hilsen%' OR plainText LIKE '%Kind regards%' OR plainText LIKE '%i vender tilbage%'
-        LIMIT 50000
-        """
-        to_update = []
-        async with db.execute(sql) as cur:
-            async for row in cur:
-                cleaned = cleanup_text(row["plainText"] or "")
-                if cleaned != (row["plainText"] or ""):
-                    to_update.append((cleaned, row["id"]))
-        if to_update:
-            await db.executemany("UPDATE messages SET plainText=? WHERE id=?", to_update)
-            await db.commit()
-            logger.info(f"Cleaned boilerplate in {len(to_update)} message rows")
-
-async def materialize_qna_pairs() -> int:
-    if not _SQLITE_OK:
-        return 0
-    inserted = 0
-    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        # Build staff cache per ticket ordered by time
-        staff_sql = """
-        SELECT ticketId, id, author, plainText, createdAt, language
-        FROM messages
-        WHERE author LIKE '%@alignerservice.com%' OR
-              lower(author) GLOB '*helle*' OR lower(author) GLOB '*karin*' OR
-              lower(author) GLOB '*priyanka*' OR lower(author) GLOB '*yazmina*'
-        ORDER BY ticketId, createdAt
-        """
-        inbound_sql = """
-        SELECT ticketId, id, author, plainText, createdAt
-        FROM messages
-        WHERE (author NOT LIKE '%@alignerservice.com%')
-          AND (lower(author) NOT GLOB '*helle*')
-          AND (lower(author) NOT GLOB '*karin*')
-          AND (lower(author) NOT GLOB '*priyanka*')
-          AND (lower(author) NOT GLOB '*yazmina*')
-        ORDER BY ticketId, createdAt
-        """
-        staff_rows = {}
-        async with db.execute(staff_sql) as cur:
-            async for r in cur:
-                staff_rows.setdefault(r["ticketId"], []).append(r)
-
-        # Clear existing and refill
-        await db.execute("DELETE FROM qna_pairs_inferred")
-
-        async with db.execute(inbound_sql) as cur:
-            async for irow in cur:
-                tid = irow["ticketId"]
-                in_time = irow["createdAt"]
-                in_txt = normalize_cell(irow["plainText"] or "")
-                if not in_txt:
-                    continue
-                candidates = staff_rows.get(tid, [])
-                # find first staff after in_time
-                ans = None
-                for s in candidates:
-                    if str(s["createdAt"]) > str(in_time):
-                        ans = s
-                        break
-                if not ans:
-                    continue
-                a_txt = normalize_cell(cleanup_text(ans["plainText"] or ""))
-                if not a_txt:
-                    continue
-                # subject if available
-                subj = None
-                try:
-                    row = await (await db.execute("SELECT subject FROM tickets WHERE ticketId=?", (tid,))).fetchone()
-                    subj = row["subject"] if row and row["subject"] else None
-                except Exception:
-                    subj = None
-                await db.execute("""
-                    INSERT INTO qna_pairs_inferred(
-                      ticketId, subject_template, inbound_question, outbound_answer,
-                      intent, tags, placeholders_json, links_json, en, createdAt_q, createdAt_a
-                    )
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
-                """, (
-                    tid, subj, in_txt, a_txt, "", "[]", "{}", "[]", ans["language"], in_time, ans["createdAt"]
-                ))
-                inserted += 1
-        await db.commit()
-    logger.info(f"Q&A pairs materialized: {inserted}")
-    return inserted
 
 # =========================
 # SQLite helpers (Zoho ticket text)
@@ -742,7 +534,7 @@ def _openai_complete_blocking_short(user_prompt: str) -> str:
                 {"role": "system", "content": "You translate text precisely. Return only the translated text."},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.0,
+            temperature=0.1,
         )
         return (resp.choices[0].message.content or "").strip()
     except Exception as e_modern:
@@ -756,7 +548,7 @@ def _openai_complete_blocking_short(user_prompt: str) -> str:
                 {"role": "system", "content": "You translate text precisely. Return only the translated text."},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.0,
+            temperature=0.1,
         )
         return (resp["choices"][0]["message"]["content"] or "").strip()
     except Exception as e_legacy:
@@ -780,7 +572,7 @@ def _openai_complete_blocking(final_prompt: str) -> str:
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": final_prompt},
             ],
-            temperature=0.2,
+            temperature=0.1,
         )
         return (resp.choices[0].message.content or "").strip()
     except Exception as e_modern:
@@ -794,7 +586,7 @@ def _openai_complete_blocking(final_prompt: str) -> str:
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": final_prompt},
             ],
-            temperature=0.2,
+            temperature=0.1,
         )
         return (resp["choices"][0]["message"]["content"] or "").strip()
     except Exception as e_legacy:
@@ -1054,7 +846,7 @@ async def api_answer(request: Request):
     qa_items = search_qa_json(retrieval_query, k=3)
     qa_hits = [_qa_to_chunk(x) for x in qa_items]
 
-    # --- MAO via anchors from Q&A refs ---
+    # --- MAO via anchors from Q&A refs (force include if available) ---
     qa_refs = [aid for it in qa_items for aid in (it.get("refs") or []) if isinstance(aid, str) and aid.startswith("MAO:")]
     mao_ref_hits = find_mao_by_anchors(qa_refs, k_per_anchor=1) if qa_refs else []
 
@@ -1073,8 +865,8 @@ async def api_answer(request: Request):
         if hist:
             history_hits = [{"text": hist[:1500], "meta": {"source": "History", "title": "Recent thread"}}]
 
-    # Merge in fixed order
-    combined_chunks = qa_hits[:3] + mao_ref_hits[:3] + mao_kw_hits[:2] + history_hits[:1]
+    # Merge in fixed order; always include up to 2 MAO refs when present
+    combined_chunks = qa_hits[:3] + mao_ref_hits[:2] + mao_kw_hits[:2] + history_hits[:1]
 
     # 5) Failsafe if no context at all
     if not combined_chunks:
@@ -1110,16 +902,23 @@ async def api_answer(request: Request):
 
     context = "\n\n".join(_clip(ch.get("text", "") if isinstance(ch, dict) else str(ch)) for ch in combined_chunks)[:8000]
 
-    # 6) Compose final prompt
+    # 6) Compose final prompt (with strict policies)
     style = style_hint(output_mode, lang)
-    final_prompt = (
-        f"{system_prompt}\n\n"
+    language_policy = f"LANGUAGE POLICY: Respond strictly in {lang}. If context is in another language, translate clinically and naturally to {lang}."
+    ranked_policy = (
         "RANKED CONTEXT POLICY\n"
         "• Q&A evidence = primary clinical guidance.\n"
         "• MAO (by anchors) = authoritative. If conflict, prefer MAO.\n"
         "• MAO (keyword) = secondary fallback.\n"
-        "• History = tone only; do not override facts.\n\n"
-        f"{style}\n\n"
+        "• History = tone only; do not override facts.\n"
+        "• If evidence is weak or absent: explicitly state 'insufficient context' and DO NOT invent numeric parameters (mm IPR, degrees, hours/day, forces).\n"
+    )
+
+    final_prompt = (
+        f"{system_prompt}\n\n"
+        f"{ranked_policy}"
+        f"{style}\n"
+        f"{language_policy}\n\n"
         f"IMPORTANT: Use only the information from 'Relevant context' below. "
         f"Do not invent names, case numbers or internal details that are not present in the context.\n\n"
         f"User message:\n{user_text}\n\n"
@@ -1142,11 +941,32 @@ async def api_answer(request: Request):
     if output_mode == "plain":
         answer_out = answer_plain
     elif output_mode == "tech_brief":
-        answer_out = answer_plain
+        answer_out = answer_plain  # model instrueres til ren tekst; dette er sikkerhedsnet
     else:
         answer_out = answer_markdown
 
-    # 8) Sources
+    # 8) Anti-echo: hvis identisk med nylige svar, vælg safe fallback
+    clip = (answer_plain or "").strip()[:400]
+    if clip:
+        h = hashlib.sha256(clip.encode("utf-8")).hexdigest()
+        if h in _LAST_HASHES:
+            logger.info("Anti-echo trigger: answer similar to recent output; returning safe generic.")
+            safe_generic = {
+                "da": (
+                    "Konteksten er utilstrækkelig til specifikke tal. Angiv mål (intrusion/extrusion, elastikmønster, IPR-lokation) "
+                    "og upload relevante noter/bogmærker, så returnerer jeg en præcis receptblok."
+                ),
+                "en": (
+                    "Context is insufficient for specific parameters. Provide goals (intrusion/extrusion, elastics pattern, IPR location) "
+                    "and upload pertinent notes/anchors for a precise prescription block."
+                ),
+            }
+            answer_out = safe_generic.get(lang, safe_generic["en"])
+            answer_markdown = answer_out
+            answer_plain = answer_out
+        _LAST_HASHES.append(h)
+
+    # 9) Sources
     sources = []
     for ch in (qa_hits[:2] + mao_ref_hits[:2] + mao_kw_hits[:1] + history_hits[:1]):
         meta = ch.get("meta", {})
