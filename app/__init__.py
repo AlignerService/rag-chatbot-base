@@ -13,10 +13,6 @@ try:
     import faiss  # type: ignore
 except Exception:
     faiss = None
-try:
-    import tiktoken  # type: ignore
-except Exception:
-    tiktoken = None
 
 import aiosqlite
 from fastapi import FastAPI, HTTPException, Depends, Request
@@ -27,30 +23,26 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 # =========================
 # Logging & Config
 # =========================
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("rag-app")
 
 FAISS_INDEX_FILE   = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 METADATA_FILE      = os.getenv("METADATA_FILE", "metadata.json")
-LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
+LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")  # Render bruger ofte /tmp
 
-RAG_BEARER_TOKEN   = os.getenv("RAG_BEARER_TOKEN", "").strip()
+RAG_BEARER_TOKEN   = os.getenv("RAG_BEARER_TOKEN", "")
 
-# OpenAI (modern v1 SDK, chat.completions)
-OPENAI_MODEL       = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
-OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_MODEL       = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
 
-# Dropbox creds
-DROPBOX_ACCESS_TOKEN  = os.getenv("DROPBOX_ACCESS_TOKEN", "").strip()
-DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH", "").strip()  # e.g. /Apps/AlignerService/knowledge.sqlite
-DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID", "").strip()
-DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET", "").strip()
-DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "").strip()
+# -------- Dropbox creds (begge flows understøttes) --------
+DROPBOX_ACCESS_TOKEN  = os.getenv("DROPBOX_ACCESS_TOKEN", "")
+DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH", "")  # fx "/Apps/AlignerService/knowledge.sqlite"
+DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID", "")
+DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET", "")
+DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
 
-# Q&A JSON integration
+# -------- Q&A JSON integration (env-config) --------
 QA_JSON_PATH   = os.getenv("QA_JSON_PATH", "mao_qa_rag_export.json")
 QA_JSON_ENABLE = os.getenv("QA_JSON_ENABLE", "1") == "1"
 
@@ -61,6 +53,8 @@ OUTPUT_MODE_DEFAULT = os.getenv("OUTPUT_MODE", "markdown").lower()
 _FAISS_INDEX = None
 _METADATA: List[Dict[str, Any]] = []
 _SQLITE_OK = False
+
+# Q&A globals
 _QA_ITEMS: List[Dict[str, Any]] = []
 
 # =========================
@@ -109,7 +103,7 @@ async def on_startup():
     try:
         await download_db()
         await init_db()
-        # load Q&A JSON
+        # --- load Q&A JSON (new) ---
         global _QA_ITEMS
         _QA_ITEMS = _qa_load_items()
         logger.info("RAG startup complete")
@@ -122,33 +116,21 @@ async def on_startup():
 def detect_language(text: str) -> str:
     if not text:
         return "en"
-    t = (text or "").lower()
-
-    # Hard cues
-    if any(ch in t for ch in ["æ", "ø", "å"]):
+    lowered = text.lower()
+    # da
+    if any(ch in lowered for ch in ["æ", "ø", "å"]):
         return "da"
-
-    # Soft cues for Danish, German, French
-    da_cues = [
-        " og ", " ikke", " det ", " der ", " som ", " tak", " klinik", "tandlæ", "ortodont",
-        "forankring", "elastik", "elastikker", "placering", "overjet", "ipr", "krydsbid",
-        "åben bid", "dybt bid", "refinement", "staging", "fasering"
-    ]
-    de_cues = [" und ", " nicht", " praxis", "zahn", "kfo", "empfang"]
-    fr_cues = [" bonjour", " merci", " cabinet", " clinique", " orthodont", " dentiste"]
-
-    da_hits = sum(1 for w in da_cues if w in t)
-    de_hits = sum(1 for w in de_cues if w in t)
-    fr_hits = sum(1 for w in fr_cues if w in t)
-
-    # Bias to Danish for ortho jargon even if “Class” etc. is English
-    if da_hits >= 1 and (" class " in t or " overjet" in t or " ipr" in t):
+    if sum(1 for w in [" og ", " jeg ", " ikke", " det ", " der ", " som ", " tak", " klinik", "tandlæ", "ortodont"] if w in lowered) >= 2:
         return "da"
-    if da_hits >= 2:
-        return "da"
-    if de_hits >= 2:
+    # de
+    if any(ch in lowered for ch in ["ä", "ö", "ü", "ß"]):
         return "de"
-    if fr_hits >= 2:
+    if sum(1 for w in [" und ", " nicht", " bitte", " danke", " praxis", "zahn", "kfo", "empfang"] if w in lowered) >= 2:
+        return "de"
+    # fr
+    if any(ch in lowered for ch in ["à", "â", "ç", "é", "è", "ê", "ë", "î", "ï", "ô", "œ", "ù", "û", "ü", "ÿ"]):
+        return "fr"
+    if sum(1 for w in [" bonjour", " merci", " cabinet", " clinique", " orthodont", " dentiste"] if w in lowered) >= 2:
         return "fr"
     return "en"
 
@@ -246,7 +228,7 @@ def make_system_prompt(lang: str, role: str) -> str:
     )
 
 # =========================
-# Dropbox download (access token OR refresh flow)
+# Dropbox download
 # =========================
 async def download_db():
     if not DROPBOX_DB_PATH:
@@ -389,7 +371,9 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
                                     if tval and (not best_time or str(tval) > str(best_time)):
                                         best_text, best_time = txt, tval
                                     elif not best_text:
-                                        best_text, best_time = txt, tval
+                                        best_text = txt
+                                        best_time = tval
+                                logger.info(f"SQLite hit: table={table}, tcol={tcol}, kcol={kcol}, ccol={ccol}, time={timecol}")
                 except Exception as e:
                     logger.info(f"SQLite query failed on {table}: {e}")
                     continue
@@ -504,7 +488,7 @@ def style_hint(mode: str, lang: str) -> str:
     return ""
 
 # =========================
-# Q&A JSON search
+# Q&A JSON search (NEW)
 # =========================
 def _qa_log(msg: str):
     try:
@@ -628,6 +612,32 @@ def find_mao_by_anchors(anchor_ids: List[str], k_per_anchor: int = 2) -> List[Di
             out.append(h); per[aid] += 1
     return out
 
+async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
+    if not _METADATA:
+        logger.info("No metadata loaded; returning empty retrieval result.")
+        return []
+    q = (query or "").strip()
+    scored = []
+    for item in _METADATA:
+        text = _strip_html(_extract_text_from_meta(item))
+        if not text:
+            continue
+        score = _keyword_score(text, q)
+        if score >= 1:  # <= LEMPET TÆRSKEL
+            scored.append((score, text, item))
+    if not scored:
+        logger.info("No positive keyword matches in metadata for this query.")
+        return []
+    scored.sort(key=lambda x: x[0], reverse=True)
+    try:
+        preview = ", ".join(_get_meta_value(s[2], "title") or _get_meta_value(s[2], "source") or "meta" for s in scored[:3])
+        logger.info(f"Top source preview: {preview}")
+    except Exception:
+        pass
+    top = [{"text": s[1], "meta": s[2]} for s in scored[:k]]
+    logger.info(f"Retrieved chunks: {len(top)} (from {len(_METADATA)} metadata items)")
+    return top
+
 async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
     if not _METADATA:
         return []
@@ -640,21 +650,13 @@ async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
         if not text:
             continue
         score = _keyword_score(text, q)
-        if score >= 1:
+        if score >= 1:  # <= LEMPET TÆRSKEL
             scored.append((score, text, item))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [{"text": s[1], "meta": s[2]} for s in scored[:k]]
 
 # =========================
-# Retrieval helpers (generic metadata)
-# =========================
-def _label_from_meta(m):
-    if isinstance(m, dict):
-        return m.get("title") or m.get("source") or m.get("path") or m.get("url") or m.get("id") or "metadata"
-    return "metadata"
-
-# =========================
-# LLM calls (OpenAI v1)
+# OpenAI calls (modern client only)
 # =========================
 async def _llm_short(user_prompt: str) -> str:
     if not (OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")):
@@ -676,9 +678,20 @@ def _openai_complete_blocking_short(user_prompt: str) -> str:
             temperature=0.0,
         )
         return (resp.choices[0].message.content or "").strip()
-    except Exception as e_modern:
-        logger.exception(f"Short OpenAI call failed: {e_modern}")
+    except Exception as e:
+        logger.exception(f"Short OpenAI call failed: {e}")
         return ""
+
+async def translate_to_english_if_needed(text: str, lang: str) -> str:
+    if lang == "en" or not text:
+        return text
+    prompt = (
+        "Translate the following text to English only. "
+        "Do not add explanations or metadata. Output only the translated text.\n\n"
+        f"Text:\n{text}"
+    )
+    out = await _llm_short(prompt)
+    return out.strip() if out else text
 
 async def get_rag_answer(final_prompt: str) -> str:
     if not OPENAI_API_KEY and not os.getenv("OPENAI_API_KEY"):
@@ -700,8 +713,8 @@ def _openai_complete_blocking(final_prompt: str) -> str:
             temperature=0.2,
         )
         return (resp.choices[0].message.content or "").strip()
-    except Exception as e_modern:
-        logger.exception(f"OpenAI call failed: {e_modern}")
+    except Exception as e:
+        logger.exception(f"OpenAI call failed: {e}")
         return "I could not generate a response due to an internal error."
 
 # =========================
@@ -766,27 +779,12 @@ async def api_answer(request: Request):
     logger.info(f"user_text(sample 300): {user_text[:300]}")
 
     # 3) Language + Role + Prompt
-    payload_lang = (body.get("lang") or "").strip().lower() if isinstance(body, dict) else ""
-    if payload_lang in {"da", "en", "de", "fr"}:
-        lang = payload_lang
-    else:
-        lang = detect_language(user_text)
+    lang = detect_language(user_text)
     role = detect_role(user_text, lang)
     role_disp = role_label(lang, role)
     system_prompt = make_system_prompt(lang, role)
 
     # 4) Cross-lingual retrieval
-    async def translate_to_english_if_needed(text: str, lang: str) -> str:
-        if lang == "en" or not text:
-            return text
-        prompt = (
-            "Translate the following text to English only. "
-            "Do not add explanations or metadata. Output only the translated text.\n\n"
-            f"Text:\n{text}"
-        )
-        out = await _llm_short(prompt)
-        return out.strip() if out else text
-
     retrieval_query = await translate_to_english_if_needed(user_text, lang)
     if retrieval_query != user_text:
         logger.info("Query translated to English for retrieval.")
@@ -797,8 +795,7 @@ async def api_answer(request: Request):
     qa_hits = [_qa_to_chunk(x) for x in qa_items]
 
     # --- MAO via anchors from Q&A refs ---
-    qa_refs = [aid for it in qa_items for aid in (it.get("refs") or [])
-               if isinstance(aid, str) and aid.startswith("MAO:")]
+    qa_refs = [aid for it in qa_items for aid in (it.get("refs") or []) if isinstance(aid, str) and aid.startswith("MAO:")]
     mao_ref_hits = find_mao_by_anchors(qa_refs, k_per_anchor=1) if qa_refs else []
 
     # --- metadata fallback (MAO keyword) ---
@@ -819,7 +816,11 @@ async def api_answer(request: Request):
     # Merge in fixed order
     combined_chunks = qa_hits[:3] + mao_ref_hits[:3] + mao_kw_hits[:2] + history_hits[:1]
 
-    # 5) Failsafe if no context at all
+    # --- garantér mindst ét MAO-keyword fallback, hvis Q&A/anchors er tomme ---
+    if not (qa_hits or mao_ref_hits) and mao_kw_hits and not combined_chunks:
+        combined_chunks = mao_kw_hits[:1]
+
+    # 5) Failsafe hvis ingen kontekst
     if not combined_chunks:
         safe_generic = {
             "da": (
@@ -846,7 +847,7 @@ async def api_answer(request: Request):
             "message": {"content": answer, "language": lang}
         }
 
-    # Context text
+    # Context text (klip lange bidder)
     def _clip(txt: str, max_len: int = 1200) -> str:
         return (txt[:max_len] + "…") if len(txt) > max_len else txt
 
@@ -884,8 +885,7 @@ async def api_answer(request: Request):
     if output_mode == "plain":
         answer_out = answer_plain
     elif output_mode == "tech_brief":
-        # model er instrueret til ren tekst; dette er sikkerhedsnet
-        answer_out = answer_plain
+        answer_out = answer_plain  # modellen er instrueret til ren tekst; dette er sikkerhedsnet
     else:
         answer_out = answer_markdown
 
@@ -893,9 +893,10 @@ async def api_answer(request: Request):
     sources = []
     for ch in (qa_hits[:2] + mao_ref_hits[:2] + mao_kw_hits[:1] + history_hits[:1]):
         meta = ch.get("meta", {})
-        label = _label_from_meta(meta)
-        url = meta.get("url") if isinstance(meta, dict) else None
-        src = {"label": label, "url": url}
+        label = None
+        if isinstance(meta, dict):
+            label = meta.get("title") or meta.get("source") or meta.get("path") or meta.get("url") or meta.get("id")
+        src = {"label": label or "metadata", "url": meta.get("url") if isinstance(meta, dict) else None}
         if isinstance(meta, dict) and meta.get("refs"):
             src["refs"] = meta.get("refs")
         if isinstance(meta, dict) and (meta.get("anchor_id") or meta.get("anchorId")):
