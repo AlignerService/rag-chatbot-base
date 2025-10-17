@@ -3531,5 +3531,3666 @@
     ],
     "brand_neutral": true,
     "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13142",
+    "question": "Payment Reminder",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "operations",
+      "payment",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13143",
+    "question": "Faktura fra Hatt Consulting, Aligner Service",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "operations",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13144",
+    "question": "Invoice from Hatt Consulting, Aligner Service",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "invoice",
+      "operations",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13145",
+    "question": "No Subject",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13146",
+    "question": "Klinisk rådgivning om sitt första fall ClearCorrect 1181473",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13147",
+    "question": "AlignerService.com] TPS - case registration - new submission",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: AlignerService.com] TPS - case registration - new submission\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13148",
+    "question": "Provider with interest in aligner service #1206486",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Provider with interest in aligner service #1206486\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13149",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13150",
+    "question": "Vedr. Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vedr. Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13151",
+    "question": "Advice - clinical support",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Advice - clinical support\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13152",
+    "question": "Betalings påmindelse",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "operations",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13153",
+    "question": "Klinisk rådgivning #",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13154",
+    "question": "Case no",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case no\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13155",
+    "question": "Klinisk rådgivning nytt fall ClearCorrect",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Klinisk rådgivning nytt fall ClearCorrect\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13156",
+    "question": "Klinisk Foto Online Kursus",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13157",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13158",
+    "question": "Set-Up optimize",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Set-Up optimize\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13159",
+    "question": "TPS #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: TPS #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13160",
+    "question": "Ny patient",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny patient\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13161",
+    "question": "Case number",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case number\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13162",
+    "question": "Case nr",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case nr\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13163",
+    "question": "Klinisk rådgivning",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Klinisk rådgivning\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13164",
+    "question": "Case submission",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case submission\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13165",
+    "question": "Klinisk støtte",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Klinisk støtte\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13166",
+    "question": "Bedömning nytt fall klinisk support",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Bedömning nytt fall klinisk support\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13167",
+    "question": "Klinisk rådgivning plan",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Klinisk rådgivning plan\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13168",
+    "question": "Case Registration Request",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case Registration Request\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13169",
+    "question": "I have a question",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13170",
+    "question": "Clearcorrect case discussion",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Clearcorrect case discussion\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13171",
+    "question": "Ny case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13172",
+    "question": "Ny case til vurdering",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case til vurdering\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13173",
+    "question": "Payment reminder",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "operations",
+      "payment",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13174",
+    "question": "Praktisk info til dit kursus",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13175",
+    "question": "Pre -resto treatment",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Pre -resto treatment\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13176",
+    "question": "Case selection",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case selection\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13177",
+    "question": "Klinisk rådgivning",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13178",
+    "question": "AKUT! revision",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: AKUT! revision\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13179",
+    "question": "Beschikbaarheid",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13180",
+    "question": "Pernille #1034895",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Pernille #1034895\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13181",
+    "question": "Vedr 1364620",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vedr 1364620\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13182",
+    "question": "Revision",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Revision\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13183",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13184",
+    "question": "Ny case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13185",
+    "question": "Klinisk support",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "support",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13186",
+    "question": "Refinement Plan",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Refinement Plan\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13187",
+    "question": "#11869033 / Valentina",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13188",
+    "question": "Fallnr",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Fallnr\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13189",
+    "question": "Ny case/ Amalie # 1923919",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case/ Amalie # 1923919\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13190",
+    "question": "Collaborator",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13191",
+    "question": "Contact notifications",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13192",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13193",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13194",
+    "question": "Kliniskrådgivning case",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13195",
+    "question": "TPS #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: TPS #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13196",
+    "question": "Dringende Unterstützung alter Invisalign Patienten",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Dringende Unterstützung alter Invisalign Patienten\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13197",
+    "question": "Faktura fra Aligner Service",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "operations",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13198",
+    "question": "Klinisk rådgivning fall ClearCorrect",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13199",
+    "question": "Nancy Stefanou #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Nancy Stefanou #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13200",
+    "question": "Vedr. uploadet case clearcorrect",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vedr. uploadet case clearcorrect\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task",
+      "upload"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13201",
+    "question": "AW: Rechnung von Hatt Consulting, Aligner Service",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "operations",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13202",
+    "question": "Link between dr. portal and ClearPilot not working",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Link between dr. portal and ClearPilot not working\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "portal",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13203",
+    "question": "Cases StudyClub today",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13204",
+    "question": "Clear aligner support",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "support",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13205",
+    "question": "#1115266",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: #1115266\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13206",
+    "question": "Case # 1234281",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case # 1234281\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13207",
+    "question": "Case 566777, doctor",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case 566777, doctor\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13208",
+    "question": "Case selection - Clearcorrect",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case selection - Clearcorrect\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13209",
+    "question": "Case til vurdering",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case til vurdering\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13210",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13211",
+    "question": "From doctor case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: From doctor case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13212",
+    "question": "Password to Invisalign",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "operations",
+      "password",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13213",
+    "question": "Vedr revision case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vedr revision case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13214",
+    "question": "Revideret setup",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Revideret setup\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13215",
+    "question": "Registrering biletter",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13216",
+    "question": "ClearCorrect cases til Clin-check",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: ClearCorrect cases til Clin-check\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13217",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13218",
+    "question": "Case Clearcorrect #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case Clearcorrect #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13219",
+    "question": "Case vurdering",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case vurdering\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13220",
+    "question": "Revision",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Revision\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13221",
+    "question": "Spørgsmål til case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Spørgsmål til case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13222",
+    "question": "Vurdering af Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vurdering af Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13223",
+    "question": "Case # 1665986 Revision - SetUp",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case # 1665986 Revision - SetUp\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13224",
+    "question": "New cases #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: New cases #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13225",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13226",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13227",
+    "question": "Case request",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case request\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13228",
+    "question": "Case Registration",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case Registration\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13229",
+    "question": "Case nummer",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case nummer\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13230",
+    "question": "Continue..CASE",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Continue..CASE\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13231",
+    "question": "Crown + Post case possible?",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Crown + Post case possible?\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13232",
+    "question": "Klinisksupport case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Klinisksupport case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13233",
+    "question": "Fallnr",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Fallnr\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13234",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13235",
+    "question": "Ny case Maria",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case Maria\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13236",
+    "question": "Therapyplaning",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Therapyplaning\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13237",
+    "question": "Payment reminder assistance with future treatment planning of Clearcorrect cases #1877928",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "operations",
+      "payment",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13238",
+    "question": "A Stubborn Canine #",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13239",
+    "question": "Case selection",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case selection\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13240",
+    "question": "Fremdrift på regulering",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13241",
+    "question": "Ny case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13242",
+    "question": "Sagsnr.",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13243",
+    "question": "Vurdering af case SureSmile",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vurdering af case SureSmile\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13244",
+    "question": "Nyt setup #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Nyt setup #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13245",
+    "question": "Vedrørende patient",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vedrørende patient\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13246",
+    "question": "Case#",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case#\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13247",
+    "question": "Case # - changed to Case#",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case # - changed to Case#\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13248",
+    "question": "CC consultation",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13249",
+    "question": "Case #, #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #, #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13250",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13251",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13252",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13253",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13254",
+    "question": "Case selection",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case selection\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13255",
+    "question": "Case-evaluering #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case-evaluering #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "case-eval",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13256",
+    "question": "Kliniskrådgivning",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13257",
+    "question": "Kliniskrådgivning case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Kliniskrådgivning case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13258",
+    "question": "Ny case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13259",
+    "question": "Nytt case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Nytt case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13260",
+    "question": "TPS: #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: TPS: #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13261",
+    "question": "Vurdering af Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vurdering af Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13262",
+    "question": "Kan vi reducere HOB? Clinical Support / Evaluation",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Kan vi reducere HOB? Clinical Support / Evaluation\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13263",
+    "question": "Full Service: Case Revision - SetUp",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Full Service: Case Revision - SetUp\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13264",
+    "question": "Set-Up",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Set-Up\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13265",
+    "question": "ClearCorrect Registration",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13266",
+    "question": "Fallplanung",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Fallplanung\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13267",
+    "question": "Case:",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case:\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13268",
+    "question": "Bedömning / klinisk rådgivning nytt fall ClearCorrect",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Bedömning / klinisk rådgivning nytt fall ClearCorrect\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13269",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13270",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13271",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13272",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13273",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13274",
+    "question": "Case no",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case no\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13275",
+    "question": "Case nr",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case nr\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13276",
+    "question": "Case vurdering",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case vurdering\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13277",
+    "question": "Casus",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Casus\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13278",
+    "question": "ClearCorrect case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: ClearCorrect case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13279",
+    "question": "Clearcorrect case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Clearcorrect case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13280",
+    "question": "Complexity case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Complexity case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13281",
+    "question": "Fuld Service Pakke",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Fuld Service Pakke\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13282",
+    "question": "Information #",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13283",
+    "question": "Klinisk rådgivning ClearCorrect",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13284",
+    "question": "Konsultation #",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13285",
+    "question": "Ny Case Pt #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny Case Pt #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13286",
+    "question": "Patientfall till Helle",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Patientfall till Helle\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13287",
+    "question": "TPS #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: TPS #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13288",
+    "question": "Vedr.",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vedr.\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13289",
+    "question": "Vedr. behandlingssetup",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vedr. behandlingssetup\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13290",
+    "question": "Klinisk Support Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Klinisk Support Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13291",
+    "question": "Klinisk rådgivning pågående fall ClearCorrect Revision SetUp",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Klinisk rådgivning pågående fall ClearCorrect Revision SetUp\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13292",
+    "question": "Hjælp til Revision/SetUp",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Hjælp til Revision/SetUp\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13293",
+    "question": "New case Revision",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: New case Revision\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13294",
+    "question": "AlignerService - treatment planning",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: AlignerService - treatment planning\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13295",
+    "question": "Clear Correct nytt fall",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Clear Correct nytt fall\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13296",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13297",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13298",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13299",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13300",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13301",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13302",
+    "question": "Case, revision",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case, revision\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13303",
+    "question": "Case evaluering fra alignerservice",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case evaluering fra alignerservice\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "case-eval",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13304",
+    "question": "Case selection",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case selection\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13305",
+    "question": "Fråga gällande",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Fråga gällande\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13306",
+    "question": "Hjælp til case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Hjælp til case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13307",
+    "question": "Klinisk rådgivning",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Klinisk rådgivning\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13308",
+    "question": "Kliniskrådgivning/ clinical advice",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Kliniskrådgivning/ clinical advice\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13309",
+    "question": "Ny case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13310",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13311",
+    "question": "Please look at Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Please look at Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13312",
+    "question": "Suresmile",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Suresmile\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13313",
+    "question": "Vil du hjælpe os",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vil du hjælpe os\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13314",
+    "question": "Klinisk Support",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "support",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13315",
+    "question": "Klinisk support #",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "support",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13316",
+    "question": "Revision - SetUp",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Revision - SetUp\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13317",
+    "question": "ClearCorrect: voorschrift aanmaken",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: ClearCorrect: voorschrift aanmaken\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13318",
+    "question": "New case to review in Spark",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: New case to review in Spark\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13319",
+    "question": "TPS for caseID",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: TPS for caseID\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13320",
+    "question": "Collaborator issues",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13321",
+    "question": "Treatment setup ready",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Treatment setup ready\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13322",
+    "question": "Betalingspåmindelse Vurdere case TPS",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Betalingspåmindelse Vurdere case TPS\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13323",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13324",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13325",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13326",
+    "question": "ClearCorrect #",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13327",
+    "question": "Clearcorrect klinisk rådgivning #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Clearcorrect klinisk rådgivning #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13328",
+    "question": "Via WeTransfer",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Via WeTransfer\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13329",
+    "question": "Evaluation #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Evaluation #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13330",
+    "question": "Full service case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Full service case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13331",
+    "question": "Hjælp til case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Hjælp til case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13332",
+    "question": "Kerim, revision #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Kerim, revision #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13333",
+    "question": "Klinisk rådgivning",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13334",
+    "question": "Klinisk rådgivning pågående fall ClearCorrect",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13335",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13336",
+    "question": "Min første case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Min første case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13337",
+    "question": "NY case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: NY case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13338",
+    "question": "Sagsnr.",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Sagsnr.\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13339",
+    "question": "Nem. kompleks eller henvisende?",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Nem. kompleks eller henvisende?\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13340",
+    "question": "Nytt fall #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Nytt fall #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13341",
+    "question": "Orto case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Orto case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13342",
+    "question": "Sagsnr.",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Sagsnr.\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13343",
+    "question": "Vedr",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vedr\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13344",
+    "question": "Klinisk support nytt fall ClearCorrect",
+    "answer_markdown": "**Kort svar**\nAngiv klinisk mål og begrænsninger. Vi returnerer et sikkert forslag med trade-offs.\n\n**Minimumsinfo**\n- Chief concern og ønsket endpoint\n- IPR/attachments/elastics-præferencer\n- Tidslinje og restorative hensyn\n",
+    "category": "Clinical",
+    "tags": [
+      "clinical",
+      "support",
+      "treatment-planning"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13345",
+    "question": "Jasper Thoolen invites you to work on a case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Jasper Thoolen invites you to work on a case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13346",
+    "question": "Setup Case#",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Setup Case#\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13347",
+    "question": "Treatment selection",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Treatment selection\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13348",
+    "question": "ClearCorrect aligner treatment",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: ClearCorrect aligner treatment\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13349",
+    "question": "Clear aligner support",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Clear aligner support\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13350",
+    "question": "Voucher code",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13351",
+    "question": "Anders",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13352",
+    "question": "Betalingspåmindelse Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Betalingspåmindelse Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13353",
+    "question": "case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13354",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13355",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13356",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13357",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13358",
+    "question": "Case Revision",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case Revision\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13359",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13360",
+    "question": "Case discussion",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case discussion\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13361",
+    "question": "Case selection",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case selection\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13362",
+    "question": "Case vurdering",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case vurdering\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13363",
+    "question": "ClearCorrect Case TPS",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: ClearCorrect Case TPS\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13364",
+    "question": "Clearcorrect case#",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Clearcorrect case#\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13365",
+    "question": "Frage zu #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Frage zu #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13366",
+    "question": "Full Service pakke + ortojournal",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Full Service pakke + ortojournal\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13367",
+    "question": "TrioClear #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: TrioClear #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13368",
+    "question": "Læbeholder og spejlkit",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13369",
+    "question": "Ny case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13370",
+    "question": "Ny case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Ny case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13371",
+    "question": "Projekt AI auf IDS",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13372",
+    "question": "Refinment / #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Refinment / #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13373",
+    "question": "Revision",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Revision\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13374",
+    "question": "Sagsnr.",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Sagsnr.\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13375",
+    "question": "Sagsnr.:",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Sagsnr.:\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13376",
+    "question": "Study Club",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13377",
+    "question": "Suresmile",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Suresmile\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13378",
+    "question": "TC kursus struktur&timeline",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13379",
+    "question": "Unpaid invoices",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started",
+      "invoice"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13380",
+    "question": "Voucher",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13381",
+    "question": "Voucher",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13382",
+    "question": "Vurdering af case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Vurdering af case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13383",
+    "question": "merge scan",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13384",
+    "question": "Bedömning/klinisk support nytt fall ClearCorrect",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Bedömning/klinisk support nytt fall ClearCorrect\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13385",
+    "question": "ClearCorrect case klinisk support - pt. færdig - videre forløb",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: ClearCorrect case klinisk support - pt. færdig - videre forløb\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13386",
+    "question": "TrioClear, support",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: TrioClear, support\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13387",
+    "question": "Scan hørende til forespørgsel til gratis konsultation TrioClear",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "operations",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13388",
+    "question": "Request for API Access or Integration Options with ClearCorrect Portal",
+    "answer_markdown": "**Kort svar**\nBrug portalen og tjeklisterne. Hold al kommunikation i sagens kommentarspor.\n\n**Trin**\n1. Portal → Cases → vælg sag/opret ny.\n2. Upload: fotos + STL/PLY (DICOM kun ved behov) + kort note.\n3. Beskriv formål, constraints og deadlines som bullets.\n4. Send. Du får kvittering og ETA i portalen.\n",
+    "category": "Operations & Systems",
+    "tags": [
+      "access",
+      "operations",
+      "portal",
+      "systems",
+      "workflow"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13389",
+    "question": "New case # SetUp",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: New case # SetUp\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13390",
+    "question": "New case Spark",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: New case Spark\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13391",
+    "question": "Treatment setup ready, Case selection",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Treatment setup ready, Case selection\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "setup",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13392",
+    "question": "Patient case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Patient case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13393",
+    "question": "Aligner Support",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Aligner Support\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "support",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13394",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13395",
+    "question": "New case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: New case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13396",
+    "question": "Orthodontic treatment of my wife",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Orthodontic treatment of my wife\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13397",
+    "question": "Clear correct case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Clear correct case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13398",
+    "question": "Clear correct case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Clear correct case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13399",
+    "question": "ClearCorrect aligner treatment",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: ClearCorrect aligner treatment\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13400",
+    "question": "Case Developing for more than a week",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case Developing for more than a week\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13401",
+    "question": "Cases clear correct",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Cases clear correct\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13402",
+    "question": "# Revision",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: # Revision\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "revision",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13403",
+    "question": "Number",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Number\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13404",
+    "question": "Zahlungserinnerung",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13405",
+    "question": "Alignerservice Options",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13406",
+    "question": "Bedömning/Klinisk rådgivning nytt fall ClearCorrect",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Bedömning/Klinisk rådgivning nytt fall ClearCorrect\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13407",
+    "question": "Bedömning/klinisk rådgivning första fallet ClearCorrect",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Bedömning/klinisk rådgivning första fallet ClearCorrect\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13408",
+    "question": "Behandelplannen",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Behandelplannen\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13409",
+    "question": "CC eller invisalign",
+    "answer_markdown": "**Overblik**\nStart i portalen, brug tjeklisterne, og skriv konkrete spørgsmål i sagens kommentarspor.\n",
+    "category": "General",
+    "tags": [
+      "general",
+      "getting-started"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13410",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13411",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13412",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13413",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13414",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13415",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13416",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13417",
+    "question": "Case # Revise",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case # Revise\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13418",
+    "question": "Case #",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case #\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13419",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13420",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13421",
+    "question": "Case",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
+  },
+  {
+    "id": "QA-13422",
+    "question": "Case nr",
+    "answer_markdown": "**Kort svar**\nJa. Bestil opgaven i portalen for hurtig håndtering.\n\n**Bestil sådan**\n1. Portal → Cases → vælg sag/opret ny.\n2. Skriv i case-kommentar (max 5 bullets):\n   - Opgave: Case nr\n   - Klinisk mål og begrænsninger\n   - IPR/attachments/elastics-præferencer (hvis relevant)\n   - Deadline og særlige hensyn\n3. Vedhæft: fotos + scan (STL/PLY; DICOM kun ved behov).\n4. Send. Vi svarer med ETA og næste skridt.\n",
+    "category": "Task request",
+    "tags": [
+      "action",
+      "request",
+      "task"
+    ],
+    "refs": [],
+    "needs_anchor_mapping": true
   }
 ]
