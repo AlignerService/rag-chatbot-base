@@ -640,7 +640,7 @@ async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
         if not text:
             continue
         score = _keyword_score(text, q)
-        if score >= 2:
+        if score >= 1:
             scored.append((score, text, item))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [{"text": s[1], "meta": s[2]} for s in scored[:k]]
