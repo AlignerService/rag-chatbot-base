@@ -310,11 +310,102 @@ def _load_metadata_multi() -> List[Dict[str, Any]]:
     return all_items
 
 # =========================
-# Init FAISS / metadata / SQLite
+# Init FAISS / metadata / SQLite (robust file loader)
 # =========================
+def _read_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+def _json_to_list_any(txt: str) -> List[Dict[str, Any]]:
+    """
+    Accepterer:
+      - almindelig JSON-liste
+      - dict med nøgler: chunks/items/data/documents/rows -> liste
+      - dict med liste-værdier -> flatten
+      - NDJSON (én JSON pr. linje)
+    Returnerer en liste af objekter; ikke-objekt-elementer filtreres bort.
+    """
+    import json
+    def only_objs(seq):
+        return [x for x in seq if isinstance(x, dict)]
+
+    # 1) Prøv som 'almindelig' JSON
+    try:
+        obj = json.loads(txt)
+        if isinstance(obj, list):
+            return only_objs(obj)
+        if isinstance(obj, dict):
+            for k in ("chunks","items","data","documents","rows"):
+                if isinstance(obj.get(k), list):
+                    return only_objs(obj[k])
+            # flatten liste-værdier
+            flat = []
+            for v in obj.values():
+                if isinstance(v, list):
+                    flat.extend(v)
+            if flat:
+                return only_objs(flat)
+    except Exception:
+        pass
+
+    # 2) NDJSON fallback
+    out = []
+    for line in txt.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            if isinstance(rec, dict):
+                out.append(rec)
+        except Exception:
+            continue
+    if out:
+        return out
+
+    # 3) Tomt
+    return []
+
+def _load_metadata_files() -> List[Dict[str, Any]]:
+    paths_env = os.getenv("METADATA_FILES", "").strip()
+    single = os.getenv("METADATA_FILE", "").strip()
+    paths: List[str] = []
+
+    if paths_env:
+        # split på komma/semikolon/whitespace
+        for part in re.split(r"[,\s;]+", paths_env):
+            if part:
+                paths.append(part)
+    elif single:
+        paths = [single]
+
+    if not paths:
+        logger.info("No metadata files configured (METADATA_FILES or METADATA_FILE).")
+        return []
+
+    loaded: List[Dict[str, Any]] = []
+    for p in paths:
+        try:
+            if not os.path.exists(p):
+                logger.warning(f"Metadata file not found: {p}")
+                continue
+            txt = _read_text(p)
+            lst = _json_to_list_any(txt)
+            if not lst:
+                logger.warning(f"Metadata file {p} did not contain a list; skipping.")
+                continue
+            loaded.extend(lst)
+            logger.info(f"Loaded {len(lst)} metadata items from {p}")
+        except Exception as e:
+            logger.exception(f"Failed loading metadata '{p}': {e}")
+
+    logger.info(f"Total metadata items loaded: {len(loaded)}")
+    return loaded
+
 async def init_db():
     global _FAISS_INDEX, _METADATA, _SQLITE_OK
 
+    # FAISS
     if faiss is not None and os.path.exists(FAISS_INDEX_FILE):
         try:
             _FAISS_INDEX = faiss.read_index(FAISS_INDEX_FILE)
@@ -325,15 +416,16 @@ async def init_db():
     else:
         logger.info("FAISS not available or index missing; continuing without FAISS.")
 
-    # Load metadata (supports multiple files)
+    # METADATA (robust)
     try:
-        _METADATA = _load_metadata_multi()
+        _METADATA = _load_metadata_files()
         if not _METADATA:
             logger.info("No metadata loaded (check METADATA_FILES or METADATA_FILE).")
     except Exception as e:
         logger.exception(f"Failed to load metadata: {e}")
         _METADATA = []
 
+    # SQLite ping
     try:
         if os.path.exists(LOCAL_DB_PATH):
             async with aiosqlite.connect(LOCAL_DB_PATH) as db:
@@ -346,6 +438,7 @@ async def init_db():
     except Exception as e:
         _SQLITE_OK = False
         logger.exception(f"SQLite check failed: {e}")
+
 
 # =========================
 # SQLite helpers (Zoho ticket text)
