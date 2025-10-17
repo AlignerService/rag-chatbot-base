@@ -37,7 +37,8 @@ FAISS_INDEX_FILE   = os.getenv("FAISS_INDEX_FILE", "faiss.index")
 
 # -------- Metadata (multi-file support) --------
 METADATA_FILE       = os.getenv("METADATA_FILE", "metadata.json")    # fallback (single file)
-METADATA_FILES_RAW  = os.getenv("METADATA_FILES", "")                # NEW: comma-separated list
+# Brug KUN METADATA_FILES nedenfor (kommasepareret/whitespace/semikolon)
+METADATA_FILES_RAW  = os.getenv("METADATA_FILES", "")
 
 LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/mnt/data/knowledge.sqlite")
 
@@ -114,7 +115,7 @@ async def on_startup():
     try:
         await download_db()
         await init_db()
-        # --- load Q&A JSON (new) ---
+        # --- load Q&A JSON (unchanged) ---
         global _QA_ITEMS
         _QA_ITEMS = _qa_load_items()
         logger.info("RAG startup complete")
@@ -274,43 +275,7 @@ async def download_db():
         logger.exception(f"Dropbox download failed: {e}")
 
 # =========================
-# Metadata loader (multi-file)
-# =========================
-def _load_metadata_multi() -> List[Dict[str, Any]]:
-    """
-    Load metadata from one or more JSON files.
-    Priority:
-      1) METADATA_FILES (comma-separated list)
-      2) METADATA_FILE (single file)
-      3) none -> []
-    Each file should be a JSON list of objects.
-    """
-    files: List[str] = []
-    if METADATA_FILES_RAW.strip():
-        files = [p.strip() for p in METADATA_FILES_RAW.split(",") if p.strip()]
-    elif METADATA_FILE:
-        files = [METADATA_FILE]
-
-    all_items: List[Dict[str, Any]] = []
-    for fp in files:
-        try:
-            if not os.path.exists(fp):
-                logger.warning(f"Metadata file not found: {fp}")
-                continue
-            with open(fp, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, list):
-                all_items.extend(data)
-                logger.info(f"Loaded {len(data)} metadata items from {fp}")
-            else:
-                logger.warning(f"Metadata file {fp} did not contain a list; skipping.")
-        except Exception as e:
-            logger.exception(f"Failed to load metadata from {fp}: {e}")
-    logger.info(f"Total metadata items loaded: {len(all_items)}")
-    return all_items
-
-# =========================
-# Init FAISS / metadata / SQLite (robust file loader)
+# Metadata loader (ROBUST, støtter 'chunks' mv. uden formatændring)
 # =========================
 def _read_text(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
@@ -319,7 +284,7 @@ def _read_text(path: str) -> str:
 def _json_to_list_any(txt: str) -> List[Dict[str, Any]]:
     """
     Accepterer:
-      - almindelig JSON-liste
+      - JSON-liste
       - dict med nøgler: chunks/items/data/documents/rows -> liste
       - dict med liste-værdier -> flatten
       - NDJSON (én JSON pr. linje)
@@ -367,8 +332,8 @@ def _json_to_list_any(txt: str) -> List[Dict[str, Any]]:
     return []
 
 def _load_metadata_files() -> List[Dict[str, Any]]:
-    paths_env = os.getenv("METADATA_FILES", "").strip()
-    single = os.getenv("METADATA_FILE", "").strip()
+    paths_env = METADATA_FILES_RAW.strip()
+    single = METADATA_FILE.strip()
     paths: List[str] = []
 
     if paths_env:
@@ -402,6 +367,9 @@ def _load_metadata_files() -> List[Dict[str, Any]]:
     logger.info(f"Total metadata items loaded: {len(loaded)}")
     return loaded
 
+# =========================
+# Init FAISS / metadata / SQLite (robust file loader)
+# =========================
 async def init_db():
     global _FAISS_INDEX, _METADATA, _SQLITE_OK
 
@@ -416,7 +384,7 @@ async def init_db():
     else:
         logger.info("FAISS not available or index missing; continuing without FAISS.")
 
-    # METADATA (robust)
+    # METADATA (robust – understøtter din nuværende filstruktur)
     try:
         _METADATA = _load_metadata_files()
         if not _METADATA:
@@ -438,7 +406,6 @@ async def init_db():
     except Exception as e:
         _SQLITE_OK = False
         logger.exception(f"SQLite check failed: {e}")
-
 
 # =========================
 # SQLite helpers (Zoho ticket text)
@@ -720,6 +687,20 @@ def _qa_to_chunk(it: Dict[str, Any]) -> Dict[str, Any]:
 # =========================
 # Retrieval helpers (generic metadata) + MAO helpers
 # =========================
+def _get_meta_value(item: Dict[str, Any], key: str):
+    if not isinstance(item, dict):
+        return None
+    if key in item:
+        return item.get(key)
+    m = item.get("meta")
+    if isinstance(m, dict) and key in m:
+        return m.get(key)
+    return None
+
+def _is_mao_item(item: Dict[str, Any]) -> bool:
+    src = (_get_meta_value(item, "source") or _get_meta_value(item, "SOURCE") or "").upper()
+    return "MAO" in src or src == "BOOK" or "MASTERING" in src
+
 async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
     if not _METADATA:
         logger.info("No metadata loaded; returning empty retrieval result.")
@@ -745,20 +726,6 @@ async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
     top = [{"text": s[1], "meta": s[2]} for s in scored[:k]]
     logger.info(f"Retrieved chunks: {len(top)} (from {len(_METADATA)} metadata items)")
     return top
-
-def _get_meta_value(item: Dict[str, Any], key: str):
-    if not isinstance(item, dict):
-        return None
-    if key in item:
-        return item.get(key)
-    m = item.get("meta")
-    if isinstance(m, dict) and key in m:
-        return m.get(key)
-    return None
-
-def _is_mao_item(item: Dict[str, Any]) -> bool:
-    src = (_get_meta_value(item, "source") or _get_meta_value(item, "SOURCE") or "").upper()
-    return "MAO" in src or src == "BOOK" or "MASTERING" in src
 
 def find_mao_by_anchors(anchor_ids: List[str], k_per_anchor: int = 2) -> List[Dict[str, Any]]:
     if not _METADATA or not anchor_ids:
