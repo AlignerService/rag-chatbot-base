@@ -90,6 +90,40 @@ def require_rag_token(credentials: HTTPAuthorizationCredentials = Depends(bearer
     return True
 
 # =========================
+# Boilerplate stripper & staff detection
+# =========================
+STAFF_PAT = re.compile(
+    r"\bhelle\s*hatt\b|\bkarin\b|\bkarin\s*rasmussen\b|\bpriyanka\b|\byazmina\b|@alignerservice\.com\b",
+    re.IGNORECASE
+)
+
+BOILER = re.compile(
+    r"(i\s*vender\s*tilbage\s*til\s*dig\s*så\s*snart\s*setup\s*er\s*klar\s*til\s*din\s*godkendelse|"
+    r"book\s*release\s*mastering\s*aligner\s*orthodontics.*|"
+    r"can\s*be\s*ordered\s*at:?\s*mastering\s*aligner\s*orthodontics\s*\|\s*alignerservice\.com.*|"
+    r"our\s*new\s*mail\s*address\s*for\s*collaborator\s*search.*|"
+    r"collaborator\s*name\s*is\s*alignerservice\s*global\s*tps.*|"
+    r"kind\s*regards\s*/\s*venlig\s*hilsen\s*/\s*mit\s*freundlichen\s*grüßen.*?(karin|helle).*?alignerservice\.com.*|"
+    r"disclaimer\s*alignerservice\s*consists\s*of\s*dentists.*?individual\s*results\s*will\s*vary\.)",
+    re.IGNORECASE | re.DOTALL
+)
+
+def cleanup_text(s: Optional[str]) -> str:
+    if not s:
+        return ""
+    s2 = BOILER.sub(" ", s)
+    s2 = re.sub(r"[\r\n]+", " ", s2)
+    s2 = re.sub(r"\s+", " ", s2).strip()
+    return s2
+
+def normalize_cell(s: Optional[str]) -> str:
+    if not s:
+        return ""
+    s2 = re.sub(r"[\r\n]+", " ", s)
+    s2 = re.sub(r"\s+", " ", s2).strip()
+    return s2
+
+# =========================
 # Startup
 # =========================
 @app.on_event("startup")
@@ -99,7 +133,6 @@ async def on_startup():
     else:
         logger.error("RAG_BEARER_TOKEN is missing!")
 
-    # ensure dir for local db
     try:
         base = os.path.dirname(LOCAL_DB_PATH)
         if base:
@@ -110,6 +143,9 @@ async def on_startup():
     try:
         await download_db()
         await init_db()
+        # Make sure schema/FTS exist and DB is cleaned + Q&A materialized
+        await ensure_schema_and_cleanup()
+        await materialize_qna_pairs()
         # --- load Q&A JSON (new) ---
         global _QA_ITEMS
         _QA_ITEMS = _qa_load_items()
@@ -124,17 +160,14 @@ def detect_language(text: str) -> str:
     if not text:
         return "en"
     lowered = text.lower()
-    # da
     if any(ch in lowered for ch in ["æ", "ø", "å"]):
         return "da"
     if sum(1 for w in [" og ", " jeg ", " ikke", " det ", " der ", " som ", " tak", " klinik", "tandlæ", "ortodont"] if w in lowered) >= 2:
         return "da"
-    # de
     if any(ch in lowered for ch in ["ä", "ö", "ü", "ß"]):
         return "de"
     if sum(1 for w in [" und ", " nicht", " bitte", " danke", " praxis", "zahn", "kfo", "empfang"] if w in lowered) >= 2:
         return "de"
-    # fr
     if any(ch in lowered for ch in ["à", "â", "ç", "é", "è", "ê", "ë", "î", "ï", "ô", "œ", "ù", "û", "ü", "ÿ"]):
         return "fr"
     if sum(1 for w in [" bonjour", " merci", " cabinet", " clinique", " orthodont", " dentiste"] if w in lowered) >= 2:
@@ -154,22 +187,6 @@ def detect_role(text: str, lang: str) -> str:
             "hygienist": ["tandplejer", "dentalhygienist"],
             "receptionist": ["receptionist", "sekretær", "reception", "frontdesk"],
             "team": ["klinikteam", "team", "klinikpersonale"],
-        },
-        "de": {
-            "dentist": ["zahnarzt", "zahnärztin"],
-            "orthodontist": ["kieferorthopäde", "kieferorthopädin", "kfo"],
-            "assistant": ["zfa", "assistenz", "stuhlassistenz"],
-            "hygienist": ["dentalhygieniker", "dentalhygienikerin", "dh"],
-            "receptionist": ["rezeption", "empfang", "praxismanager"],
-            "team": ["team", "praxisteam"],
-        },
-        "fr": {
-            "dentist": ["dentiste", "chirurgien-dentiste"],
-            "orthodontist": ["orthodontiste"],
-            "assistant": ["assistante dentaire", "assistant dentaire"],
-            "hygienist": ["hygiéniste dentaire", "hygieniste dentaire"],
-            "receptionist": ["réceptionniste", "accueil", "secrétaire médicale"],
-            "team": ["équipe", "cabinet", "clinique"],
         },
         "en": {
             "dentist": ["dentist"],
@@ -197,8 +214,6 @@ def detect_role(text: str, lang: str) -> str:
 def role_label(lang: str, role: str) -> str:
     labels = {
         "da": {"dentist": "tandlæge","orthodontist":"ortodontist","assistant":"klinikassistent","hygienist":"tandplejer","receptionist":"receptionist","team":"klinikteam","clinician":"kliniker"},
-        "de": {"dentist": "Zahnarzt/Zahnärztin","orthodontist":"Kieferorthopäde/Kieferorthopädin","assistant":"ZFA/Assistenz","hygienist":"Dentalhygieniker/in","receptionist":"Rezeption/PM","team":"Praxisteam","clinician":"Behandler/in"},
-        "fr": {"dentist": "dentiste","orthodontist":"orthodontiste","assistant":"assistant(e) dentaire","hygienist":"hygiéniste dentaire","receptionist":"réceptionniste","team":"équipe clinique","clinician":"praticien(ne)"},
         "en": {"dentist": "dentist","orthodontist":"orthodontist","assistant":"dental assistant","hygienist":"dental hygienist","receptionist":"receptionist","team":"clinic team","clinician":"clinician"},
     }
     return labels.get(lang, labels["en"]).get(role, role)
@@ -326,6 +341,190 @@ async def init_db():
     except Exception as e:
         _SQLITE_OK = False
         logger.exception(f"SQLite check failed: {e}")
+
+# =========================
+# Schema, cleaning, FTS5, Q&A materialization
+# =========================
+SCHEMA_SQL = """
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+
+CREATE TABLE IF NOT EXISTS messages (
+  id        TEXT PRIMARY KEY,
+  ticketId  TEXT NOT NULL,
+  author    TEXT,
+  direction TEXT,
+  plainText TEXT NOT NULL,
+  createdAt TEXT NOT NULL,
+  language  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS qna_pairs_inferred (
+  ticketId           TEXT NOT NULL,
+  subject_template   TEXT,
+  inbound_question   TEXT NOT NULL,
+  outbound_answer    TEXT NOT NULL,
+  intent             TEXT DEFAULT '',
+  tags               TEXT DEFAULT '[]',
+  placeholders_json  TEXT DEFAULT '{}',
+  links_json         TEXT DEFAULT '[]',
+  en                 TEXT,
+  createdAt_q        TEXT,
+  createdAt_a        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tickets (
+  ticketId TEXT PRIMARY KEY,
+  subject  TEXT
+);
+"""
+
+INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS idx_messages_ticket_time ON messages(ticketId, createdAt);
+CREATE INDEX IF NOT EXISTS idx_messages_author_time ON messages(author, createdAt);
+CREATE INDEX IF NOT EXISTS idx_qna_ticket ON qna_pairs_inferred(ticketId);
+CREATE INDEX IF NOT EXISTS idx_qna_intent ON qna_pairs_inferred(intent);
+"""
+
+FTS_BOOTSTRAP_SQL = """
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+  plainText,
+  content='messages',
+  content_rowid='id'
+);
+"""
+
+TRIGGERS_SQL = """
+DROP TRIGGER IF EXISTS messages_ai;
+DROP TRIGGER IF EXISTS messages_ad;
+DROP TRIGGER IF EXISTS messages_au;
+
+CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(rowid, plainText) VALUES (new.id, new.plainText);
+END;
+
+CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, plainText) VALUES('delete', old.id, old.plainText);
+END;
+
+CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, plainText) VALUES('delete', old.id, old.plainText);
+  INSERT INTO messages_fts(rowid, plainText) VALUES (new.id, new.plainText);
+END;
+"""
+
+async def ensure_schema_and_cleanup():
+    if not _SQLITE_OK:
+        logger.warning("ensure_schema_and_cleanup(): SQLite not available")
+        return
+    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+        await db.executescript(SCHEMA_SQL)
+        await db.executescript(INDEX_SQL)
+        await db.executescript(FTS_BOOTSTRAP_SQL)
+        # Seed FTS if empty
+        try:
+            row = await (await db.execute("SELECT count(*) FROM messages_fts")).fetchone()
+            fts_n = row[0] if row else 0
+        except Exception:
+            fts_n = 0
+        if fts_n == 0:
+            await db.execute("INSERT INTO messages_fts(rowid, plainText) SELECT id, plainText FROM messages")
+        await db.executescript(TRIGGERS_SQL)
+        await db.commit()
+
+    # Clean messages in-place where needed (light pass, safe)
+    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # Find candidates that likely contain boilerplate (cheap LIKE guards)
+        sql = """
+        SELECT id, plainText FROM messages
+        WHERE plainText LIKE '%AlignerService%' OR plainText LIKE '%Disclaimer%' OR plainText LIKE '%Mastering Aligner Orthodontics%'
+              OR plainText LIKE '%venlig hilsen%' OR plainText LIKE '%Kind regards%' OR plainText LIKE '%i vender tilbage%'
+        LIMIT 50000
+        """
+        to_update = []
+        async with db.execute(sql) as cur:
+            async for row in cur:
+                cleaned = cleanup_text(row["plainText"] or "")
+                if cleaned != (row["plainText"] or ""):
+                    to_update.append((cleaned, row["id"]))
+        if to_update:
+            await db.executemany("UPDATE messages SET plainText=? WHERE id=?", to_update)
+            await db.commit()
+            logger.info(f"Cleaned boilerplate in {len(to_update)} message rows")
+
+async def materialize_qna_pairs() -> int:
+    if not _SQLITE_OK:
+        return 0
+    inserted = 0
+    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        # Build staff cache per ticket ordered by time
+        staff_sql = """
+        SELECT ticketId, id, author, plainText, createdAt, language
+        FROM messages
+        WHERE author LIKE '%@alignerservice.com%' OR
+              lower(author) GLOB '*helle*' OR lower(author) GLOB '*karin*' OR
+              lower(author) GLOB '*priyanka*' OR lower(author) GLOB '*yazmina*'
+        ORDER BY ticketId, createdAt
+        """
+        inbound_sql = """
+        SELECT ticketId, id, author, plainText, createdAt
+        FROM messages
+        WHERE (author NOT LIKE '%@alignerservice.com%')
+          AND (lower(author) NOT GLOB '*helle*')
+          AND (lower(author) NOT GLOB '*karin*')
+          AND (lower(author) NOT GLOB '*priyanka*')
+          AND (lower(author) NOT GLOB '*yazmina*')
+        ORDER BY ticketId, createdAt
+        """
+        staff_rows = {}
+        async with db.execute(staff_sql) as cur:
+            async for r in cur:
+                staff_rows.setdefault(r["ticketId"], []).append(r)
+
+        # Clear existing and refill
+        await db.execute("DELETE FROM qna_pairs_inferred")
+
+        async with db.execute(inbound_sql) as cur:
+            async for irow in cur:
+                tid = irow["ticketId"]
+                in_time = irow["createdAt"]
+                in_txt = normalize_cell(irow["plainText"] or "")
+                if not in_txt:
+                    continue
+                candidates = staff_rows.get(tid, [])
+                # find first staff after in_time
+                ans = None
+                for s in candidates:
+                    if str(s["createdAt"]) > str(in_time):
+                        ans = s
+                        break
+                if not ans:
+                    continue
+                a_txt = normalize_cell(cleanup_text(ans["plainText"] or ""))
+                if not a_txt:
+                    continue
+                # subject if available
+                subj = None
+                try:
+                    row = await (await db.execute("SELECT subject FROM tickets WHERE ticketId=?", (tid,))).fetchone()
+                    subj = row["subject"] if row and row["subject"] else None
+                except Exception:
+                    subj = None
+                await db.execute("""
+                    INSERT INTO qna_pairs_inferred(
+                      ticketId, subject_template, inbound_question, outbound_answer,
+                      intent, tags, placeholders_json, links_json, en, createdAt_q, createdAt_a
+                    )
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    tid, subj, in_txt, a_txt, "", "[]", "{}", "[]", ans["language"], in_time, ans["createdAt"]
+                ))
+                inserted += 1
+        await db.commit()
+    logger.info(f"Q&A pairs materialized: {inserted}")
+    return inserted
 
 # =========================
 # SQLite helpers (Zoho ticket text)
@@ -943,7 +1142,7 @@ async def api_answer(request: Request):
     if output_mode == "plain":
         answer_out = answer_plain
     elif output_mode == "tech_brief":
-        answer_out = answer_plain  # model er instrueret til ren tekst; dette er sikkerhedsnet
+        answer_out = answer_plain
     else:
         answer_out = answer_markdown
 
@@ -956,7 +1155,6 @@ async def api_answer(request: Request):
         src = {"label": label, "url": url}
         if isinstance(meta, dict) and meta.get("refs"):
             src["refs"] = meta.get("refs")
-        # include anchor_id if present in MAO hit
         if isinstance(meta, dict) and (meta.get("anchor_id") or meta.get("anchorId")):
             src["anchor_id"] = meta.get("anchor_id") or meta.get("anchorId")
         sources.append(src)
