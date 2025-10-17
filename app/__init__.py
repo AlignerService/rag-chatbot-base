@@ -14,7 +14,14 @@ try:
 except Exception:
     faiss = None
 
+try:
+    import tiktoken  # type: ignore
+except Exception:
+    tiktoken = None
+
+import aiohttp
 import aiosqlite
+
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -27,17 +34,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(
 logger = logging.getLogger("rag-app")
 
 FAISS_INDEX_FILE   = os.getenv("FAISS_INDEX_FILE", "faiss.index")
-METADATA_FILE      = os.getenv("METADATA_FILE", "metadata.json")
-LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")  # Render bruger ofte /tmp
+
+# -------- Metadata (multi-file support) --------
+METADATA_FILE       = os.getenv("METADATA_FILE", "metadata.json")    # fallback (single file)
+METADATA_FILES_RAW  = os.getenv("METADATA_FILES", "")                # NEW: comma-separated list
+
+LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/mnt/data/knowledge.sqlite")
 
 RAG_BEARER_TOKEN   = os.getenv("RAG_BEARER_TOKEN", "")
 
-OPENAI_MODEL       = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL       = os.getenv("OPENAI_CHAT_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
 OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY", "")
 
-# -------- Dropbox creds (begge flows understøttes) --------
+# -------- Dropbox creds (both modes supported) --------
 DROPBOX_ACCESS_TOKEN  = os.getenv("DROPBOX_ACCESS_TOKEN", "")
-DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH", "")  # fx "/Apps/AlignerService/knowledge.sqlite"
+DROPBOX_DB_PATH       = os.getenv("DROPBOX_DB_PATH", "")
 DROPBOX_CLIENT_ID     = os.getenv("DROPBOX_CLIENT_ID", "")
 DROPBOX_CLIENT_SECRET = os.getenv("DROPBOX_CLIENT_SECRET", "")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
@@ -228,7 +239,7 @@ def make_system_prompt(lang: str, role: str) -> str:
     )
 
 # =========================
-# Dropbox download
+# Dropbox download (access token OR refresh flow)
 # =========================
 async def download_db():
     if not DROPBOX_DB_PATH:
@@ -263,6 +274,42 @@ async def download_db():
         logger.exception(f"Dropbox download failed: {e}")
 
 # =========================
+# Metadata loader (multi-file)
+# =========================
+def _load_metadata_multi() -> List[Dict[str, Any]]:
+    """
+    Load metadata from one or more JSON files.
+    Priority:
+      1) METADATA_FILES (comma-separated list)
+      2) METADATA_FILE (single file)
+      3) none -> []
+    Each file should be a JSON list of objects.
+    """
+    files: List[str] = []
+    if METADATA_FILES_RAW.strip():
+        files = [p.strip() for p in METADATA_FILES_RAW.split(",") if p.strip()]
+    elif METADATA_FILE:
+        files = [METADATA_FILE]
+
+    all_items: List[Dict[str, Any]] = []
+    for fp in files:
+        try:
+            if not os.path.exists(fp):
+                logger.warning(f"Metadata file not found: {fp}")
+                continue
+            with open(fp, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                all_items.extend(data)
+                logger.info(f"Loaded {len(data)} metadata items from {fp}")
+            else:
+                logger.warning(f"Metadata file {fp} did not contain a list; skipping.")
+        except Exception as e:
+            logger.exception(f"Failed to load metadata from {fp}: {e}")
+    logger.info(f"Total metadata items loaded: {len(all_items)}")
+    return all_items
+
+# =========================
 # Init FAISS / metadata / SQLite
 # =========================
 async def init_db():
@@ -278,16 +325,14 @@ async def init_db():
     else:
         logger.info("FAISS not available or index missing; continuing without FAISS.")
 
-    if os.path.exists(METADATA_FILE):
-        try:
-            with open(METADATA_FILE, "r", encoding="utf-8") as f:
-                _METADATA = json.load(f)
-            logger.info(f"Loaded metadata with {len(_METADATA)} entries from {METADATA_FILE}")
-        except Exception as e:
-            logger.exception(f"Failed to load metadata: {e}")
-            _METADATA = []
-    else:
-        logger.info("No metadata.json found; continuing without metadata.")
+    # Load metadata (supports multiple files)
+    try:
+        _METADATA = _load_metadata_multi()
+        if not _METADATA:
+            logger.info("No metadata loaded (check METADATA_FILES or METADATA_FILE).")
+    except Exception as e:
+        logger.exception(f"Failed to load metadata: {e}")
+        _METADATA = []
 
     try:
         if os.path.exists(LOCAL_DB_PATH):
@@ -436,6 +481,11 @@ def _extract_text_from_meta(item: Any) -> str:
             return "\n".join(flat_strings).strip()
     return ""
 
+def _label_from_meta(m):
+    if isinstance(m, dict):
+        return m.get("title") or m.get("source") or m.get("path") or m.get("url") or m.get("id") or "metadata"
+    return "metadata"
+
 def _keyword_score(text: str, query: str) -> int:
     if not text or not query:
         return 0
@@ -488,7 +538,7 @@ def style_hint(mode: str, lang: str) -> str:
     return ""
 
 # =========================
-# Q&A JSON search (NEW)
+# Q&A JSON search
 # =========================
 def _qa_log(msg: str):
     try:
@@ -575,8 +625,34 @@ def _qa_to_chunk(it: Dict[str, Any]) -> Dict[str, Any]:
     return {"text": text, "meta": meta}
 
 # =========================
-# MAO via anchors (prefer from METADATA)
+# Retrieval helpers (generic metadata) + MAO helpers
 # =========================
+async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
+    if not _METADATA:
+        logger.info("No metadata loaded; returning empty retrieval result.")
+        return []
+    q = (query or "").strip()
+    scored = []
+    for item in _METADATA:
+        text = _strip_html(_extract_text_from_meta(item))
+        if not text:
+            continue
+        score = _keyword_score(text, q)
+        if score >= 2:
+            scored.append((score, text, item))
+    if not scored:
+        logger.info("No positive keyword matches in metadata for this query.")
+        return []
+    scored.sort(key=lambda x: x[0], reverse=True)
+    try:
+        preview = ", ".join(_label_from_meta(s[2]) for s in scored[:3])
+        logger.info(f"Top source preview: {preview}")
+    except Exception:
+        pass
+    top = [{"text": s[1], "meta": s[2]} for s in scored[:k]]
+    logger.info(f"Retrieved chunks: {len(top)} (from {len(_METADATA)} metadata items)")
+    return top
+
 def _get_meta_value(item: Dict[str, Any], key: str):
     if not isinstance(item, dict):
         return None
@@ -612,32 +688,6 @@ def find_mao_by_anchors(anchor_ids: List[str], k_per_anchor: int = 2) -> List[Di
             out.append(h); per[aid] += 1
     return out
 
-async def get_top_chunks(query: str, k: int = 5) -> List[Dict[str, Any]]:
-    if not _METADATA:
-        logger.info("No metadata loaded; returning empty retrieval result.")
-        return []
-    q = (query or "").strip()
-    scored = []
-    for item in _METADATA:
-        text = _strip_html(_extract_text_from_meta(item))
-        if not text:
-            continue
-        score = _keyword_score(text, q)
-        if score >= 1:  # <= LEMPET TÆRSKEL
-            scored.append((score, text, item))
-    if not scored:
-        logger.info("No positive keyword matches in metadata for this query.")
-        return []
-    scored.sort(key=lambda x: x[0], reverse=True)
-    try:
-        preview = ", ".join(_get_meta_value(s[2], "title") or _get_meta_value(s[2], "source") or "meta" for s in scored[:3])
-        logger.info(f"Top source preview: {preview}")
-    except Exception:
-        pass
-    top = [{"text": s[1], "meta": s[2]} for s in scored[:k]]
-    logger.info(f"Retrieved chunks: {len(top)} (from {len(_METADATA)} metadata items)")
-    return top
-
 async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
     if not _METADATA:
         return []
@@ -650,14 +700,25 @@ async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
         if not text:
             continue
         score = _keyword_score(text, q)
-        if score >= 1:  # <= LEMPET TÆRSKEL
+        if score >= 2:
             scored.append((score, text, item))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [{"text": s[1], "meta": s[2]} for s in scored[:k]]
 
 # =========================
-# OpenAI calls (modern client only)
+# LLM translation & calls
 # =========================
+async def translate_to_english_if_needed(text: str, lang: str) -> str:
+    if lang == "en" or not text:
+        return text
+    prompt = (
+        "Translate the following text to English only. "
+        "Do not add explanations or metadata. Output only the translated text.\n\n"
+        f"Text:\n{text}"
+    )
+    out = await _llm_short(prompt)
+    return out.strip() if out else text
+
 async def _llm_short(user_prompt: str) -> str:
     if not (OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")):
         logger.warning("OPENAI_API_KEY missing for translation")
@@ -678,20 +739,9 @@ def _openai_complete_blocking_short(user_prompt: str) -> str:
             temperature=0.0,
         )
         return (resp.choices[0].message.content or "").strip()
-    except Exception as e:
-        logger.exception(f"Short OpenAI call failed: {e}")
+    except Exception as e_modern:
+        logger.exception(f"Short OpenAI call failed: {e_modern}")
         return ""
-
-async def translate_to_english_if_needed(text: str, lang: str) -> str:
-    if lang == "en" or not text:
-        return text
-    prompt = (
-        "Translate the following text to English only. "
-        "Do not add explanations or metadata. Output only the translated text.\n\n"
-        f"Text:\n{text}"
-    )
-    out = await _llm_short(prompt)
-    return out.strip() if out else text
 
 async def get_rag_answer(final_prompt: str) -> str:
     if not OPENAI_API_KEY and not os.getenv("OPENAI_API_KEY"):
@@ -713,8 +763,8 @@ def _openai_complete_blocking(final_prompt: str) -> str:
             temperature=0.2,
         )
         return (resp.choices[0].message.content or "").strip()
-    except Exception as e:
-        logger.exception(f"OpenAI call failed: {e}")
+    except Exception as e_modern:
+        logger.exception(f"OpenAI call failed: {e_modern}")
         return "I could not generate a response due to an internal error."
 
 # =========================
@@ -816,11 +866,7 @@ async def api_answer(request: Request):
     # Merge in fixed order
     combined_chunks = qa_hits[:3] + mao_ref_hits[:3] + mao_kw_hits[:2] + history_hits[:1]
 
-    # --- garantér mindst ét MAO-keyword fallback, hvis Q&A/anchors er tomme ---
-    if not (qa_hits or mao_ref_hits) and mao_kw_hits and not combined_chunks:
-        combined_chunks = mao_kw_hits[:1]
-
-    # 5) Failsafe hvis ingen kontekst
+    # 5) Failsafe if no context at all
     if not combined_chunks:
         safe_generic = {
             "da": (
@@ -834,6 +880,7 @@ async def api_answer(request: Request):
                 "Next steps: load more sources into the RAG."
             ),
         }
+        sources = []
         answer = safe_generic.get(lang, safe_generic["en"])
         return {
             "finalAnswer": answer,
@@ -841,13 +888,13 @@ async def api_answer(request: Request):
             "finalAnswerPlain": md_to_plain(answer),
             "language": lang,
             "role": role_disp,
-            "sources": [],
+            "sources": sources,
             "ticketId": ticket_id,
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "message": {"content": answer, "language": lang}
         }
 
-    # Context text (klip lange bidder)
+    # Context text
     def _clip(txt: str, max_len: int = 1200) -> str:
         return (txt[:max_len] + "…") if len(txt) > max_len else txt
 
@@ -885,7 +932,7 @@ async def api_answer(request: Request):
     if output_mode == "plain":
         answer_out = answer_plain
     elif output_mode == "tech_brief":
-        answer_out = answer_plain  # modellen er instrueret til ren tekst; dette er sikkerhedsnet
+        answer_out = answer_plain  # model instrueret til ren tekst; dette er sikkerhedsnet
     else:
         answer_out = answer_markdown
 
@@ -893,10 +940,9 @@ async def api_answer(request: Request):
     sources = []
     for ch in (qa_hits[:2] + mao_ref_hits[:2] + mao_kw_hits[:1] + history_hits[:1]):
         meta = ch.get("meta", {})
-        label = None
-        if isinstance(meta, dict):
-            label = meta.get("title") or meta.get("source") or meta.get("path") or meta.get("url") or meta.get("id")
-        src = {"label": label or "metadata", "url": meta.get("url") if isinstance(meta, dict) else None}
+        label = _label_from_meta(meta)
+        url = meta.get("url") if isinstance(meta, dict) else None
+        src = {"label": label, "url": url}
         if isinstance(meta, dict) and meta.get("refs"):
             src["refs"] = meta.get("refs")
         if isinstance(meta, dict) and (meta.get("anchor_id") or meta.get("anchorId")):
