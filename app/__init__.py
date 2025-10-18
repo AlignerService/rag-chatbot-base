@@ -61,6 +61,12 @@ QA_JSON_ENABLE = os.getenv("QA_JSON_ENABLE", "1") == "1"
 # Optional output mode: markdown | plain | tech_brief | mail
 OUTPUT_MODE_DEFAULT = os.getenv("OUTPUT_MODE", "markdown").lower()
 
+# ===== Embeddings/rerank config (NYT) =====
+EMBED_MODEL   = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-large")
+RETR_K        = int(os.getenv("RETR_K", "40"))           # kandidat-mængde før rerank
+RERANK_TOPK   = int(os.getenv("RERANK_TOPK", "12"))      # semantisk topK
+MMR_LAMBDA    = float(os.getenv("MMR_LAMBDA", "0.4"))    # diversitet 0..1
+
 # Globals
 _FAISS_INDEX = None
 _METADATA: List[Dict[str, Any]] = []
@@ -568,6 +574,102 @@ def md_to_plain(md: str) -> str:
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
 
+# ===== Klinisk faktekstraktor (NYT) =====
+def extract_facts(text: str) -> Dict[str, Any]:
+    t = (text or "").lower()
+    facts = {
+        "angle_class": "unknown",
+        "crossbite": any(x in t for x in ["crossbite","krydsbid"]),
+        "open_bite": any(x in t for x in ["open bite","åbent bid","åben bid"]),
+        "deep_bite": any(x in t for x in ["deep bite","dybt bid"]),
+        "bolton": "bolton" in t,
+        "crowding_mm": None,
+        "spacing_mm": None,
+        "overjet_mm": None,
+        "overbite_mm": None,
+        "habits": any(x in t for x in ["tongue thrust","tungepres","mouth breathing","mundånding"]),
+    }
+    if "class ii" in t or "klasse ii" in t: facts["angle_class"] = "II"
+    elif "class iii" in t or "klasse iii" in t: facts["angle_class"] = "III"
+    elif "class i" in t or "klasse i" in t: facts["angle_class"] = "I"
+    for k, pat in [("crowding_mm", r"crowding[^0-9]{0,8}(\d+(?:\.\d+)?)\s*mm"),
+                   ("spacing_mm",  r"spacing[^0-9]{0,8}(\d+(?:\.\d+)?)\s*mm"),
+                   ("overjet_mm",  r"overjet[^0-9]{0,8}(\d+(?:\.\d+)?)\s*mm"),
+                   ("overbite_mm", r"overbite[^0-9]{0,8}(\d+(?:\.\d+)?)\s*mm")]:
+        m = re.search(pat, t)
+        if m: facts[k] = float(m.group(1))
+    return facts
+
+def build_query_boosters(facts: Dict[str, Any]) -> List[str]:
+    out = []
+    ac = facts.get("angle_class")
+    if ac and ac!="unknown": out += [f"angle class {ac}", f"klasse {ac}"]
+    if facts.get("open_bite"): out += ["anterior open bite","åbent bid","vertical discrepancy","intrusion"]
+    if facts.get("deep_bite"): out += ["deep bite","dybt bid","extrusion","incisal display"]
+    if facts.get("crossbite"): out += ["crossbite","krydsbid","transverse"]
+    if facts.get("bolton"): out += ["bolton analysis","bolton ratio"]
+    return list(dict.fromkeys(out))
+
+def _label_join(meta: Dict[str, Any], text: str) -> str:
+    return (_label_from_meta(meta) + "|" + (_strip_html(text)[:120])).lower()
+
+# ===== Embeddings + semantic rerank + MMR (NYT) =====
+@lru_cache(maxsize=4096)
+def _embed_cached(text: str) -> List[float]:
+    from openai import OpenAI  # type: ignore
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", OPENAI_API_KEY))
+    emb = client.embeddings.create(model=EMBED_MODEL, input=text)
+    return emb.data[0].embedding  # type: ignore
+
+def _cos(u: List[float], v: List[float]) -> float:
+    import math
+    if not u or not v or len(u)!=len(v): return 0.0
+    su = math.sqrt(sum(x*x for x in u)); sv = math.sqrt(sum(x*x for x in v))
+    if su==0 or sv==0: return 0.0
+    return sum(a*b for a,b in zip(u,v)) / (su*sv)
+
+def semantic_rerank(query: str, candidates: List[Dict[str, Any]], topk: int) -> List[Dict[str, Any]]:
+    if not candidates: return []
+    try:
+        q_emb = _embed_cached(query)
+        scored = []
+        for c in candidates:
+            txt = _strip_html(_extract_text_from_meta(c))
+            emb = _embed_cached(txt[:2000])
+            scored.append(( _cos(q_emb, emb), c))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [c for _, c in scored[:topk]]
+    except Exception as e:
+        logger.info(f"semantic_rerank fallback: {e}")
+        return candidates[:topk]
+
+def mmr_select(query: str, items: List[Dict[str, Any]], lam: float, m: int) -> List[Dict[str, Any]]:
+    if not items: return []
+    try:
+        q_emb = _embed_cached(query)
+        embs = []
+        for it in items:
+            txt = _strip_html(_extract_text_from_meta(it))
+            embs.append(_embed_cached(txt[:2000]))
+        selected, used = [], set()
+        sims_q = [ _cos(q_emb, e) for e in embs ]
+        while len(selected) < min(m, len(items)):
+            best_i, best_score = -1, -1.0
+            for i in range(len(items)):
+                if i in used: continue
+                div_penalty = 0.0
+                if selected:
+                    div_penalty = max(_cos(embs[i], embs[j]) for j in selected)
+                score = lam * sims_q[i] - (1-lam) * div_penalty
+                if score > best_score:
+                    best_score, best_i = score, i
+            used.add(best_i)
+            selected.append(best_i)
+        return [items[i] for i in selected]
+    except Exception as e:
+        logger.info(f"mmr_select fallback: {e}")
+        return items[:m]
+
 def style_hint(mode: str, lang: str) -> str:
     """
     Returnerer en streng, der instruerer modellen i præcis outputformatering.
@@ -689,6 +791,12 @@ _QA_WEIGHTS = {
     "anchorage": 2.0, "torque": 2.0, "intrusion": 1.8, "extrusion": 1.8, "rotation": 1.2,
     "crossbite": 1.8, "retention": 1.8, "scan": 1.2, "x-rays": 1.2, "cbct": 1.2, "trimline": 1.5,
 }
+# Løft de kliniske styringsord en smule (NYT)
+_QA_WEIGHTS.update({
+    "angle": 1.5, "klasse": 1.5, "i": 0.6, "ii": 1.0, "iii": 1.0,
+    "vertical": 1.6, "mpa": 1.6, "bolton": 2.2, "overjet": 1.2, "overbite": 1.2,
+    "open-bite": 2.0, "aob": 2.0
+})
 
 def _qa_score(query_tokens: List[str], haystack_tokens: List[str]) -> float:
     if not haystack_tokens:
@@ -948,27 +1056,43 @@ async def api_answer(request: Request):
     role_disp = role_label(lang, role)
     system_prompt = make_system_prompt(lang, role)
 
-    # 4) Cross-lingual retrieval
+    # 4) Cross-lingual retrieval + facts (NYT)
     retrieval_query = await translate_to_english_if_needed(user_text, lang)
     if retrieval_query != user_text:
         logger.info("Query translated to English for retrieval.")
         logger.info(f"retrieval_query(sample 200): {retrieval_query[:200]}")
 
-    # --- Q&A hits (JSON, prioritized) ---
-    qa_items = search_qa_json(retrieval_query, k=3)
-    qa_hits = [_qa_to_chunk(x) for x in qa_items]
+    facts = extract_facts(user_text)
+    boosters = build_query_boosters(facts)
+    boosted_query = (retrieval_query + " " + " ".join(boosters)).strip()
 
-    # --- MAO via anchors from Q&A refs ---
+    # --- Q&A hits (stort K) ---
+    qa_items = search_qa_json(boosted_query, k=RETR_K)
+    qa_hits_raw = [_qa_to_chunk(x) for x in qa_items]
+
+    # --- MAO via anchors fra Q&A refs ---
     qa_refs = [aid for it in qa_items for aid in (it.get("refs") or []) if isinstance(aid, str) and aid.startswith("MAO:")]
-    mao_ref_hits = find_mao_by_anchors(qa_refs, k_per_anchor=1) if qa_refs else []
+    mao_ref_hits_raw = find_mao_by_anchors(qa_refs, k_per_anchor=2) if qa_refs else []
 
     # --- metadata fallback (MAO keyword) ---
-    mao_kw_hits = []
-    if not mao_ref_hits:
-        try:
-            mao_kw_hits = await get_mao_top_chunks(retrieval_query, k=3)
-        except Exception as e:
-            logger.info(f"MAO keyword retrieval failed: {e}")
+    mao_kw_hits_raw = []
+    try:
+        mao_kw_hits_raw = await get_mao_top_chunks(boosted_query, k=max(4, RETR_K//3))
+    except Exception as e:
+        logger.info(f"MAO keyword retrieval failed: {e}")
+
+    # Merge kandidater, dedup, semantisk rerank, MMR-diversitet (NYT)
+    cands = qa_hits_raw + mao_ref_hits_raw + mao_kw_hits_raw
+    seen = set(); uniq=[]
+    for c in cands:
+        txt = _extract_text_from_meta(c)
+        meta = c.get("meta", {})
+        key = _label_join(meta, txt)
+        if key not in seen and txt:
+            uniq.append(c); seen.add(key)
+
+    sem_top = semantic_rerank(boosted_query, uniq, topk=RERANK_TOPK)
+    diversified = mmr_select(boosted_query, sem_top, lam=MMR_LAMBDA, m=min(8, len(sem_top)))
 
     # --- historical tone (last thread), optional ---
     history_hits = []
@@ -977,8 +1101,7 @@ async def api_answer(request: Request):
         if hist:
             history_hits = [{"text": hist[:1500], "meta": {"source": "History", "title": "Recent thread"}}]
 
-    # Merge in fixed order
-    combined_chunks = qa_hits[:3] + mao_ref_hits[:3] + mao_kw_hits[:2] + history_hits[:1]
+    combined_chunks = diversified + history_hits
 
     # 5) Failsafe if no context at all
     if not combined_chunks:
@@ -1012,10 +1135,21 @@ async def api_answer(request: Request):
     def _clip(txt: str, max_len: int = 1200) -> str:
         return (txt[:max_len] + "…") if len(txt) > max_len else txt
 
-    context = "\n\n".join(_clip(ch.get("text", "") if isinstance(ch, dict) else str(ch)) for ch in combined_chunks)[:8000]
+    context = "\n\n".join(_clip(ch.get("text", "") if isinstance(ch, dict) else str(ch)) for ch in combined_chunks)[:9000]
 
-    # 6) Compose final prompt
+    # 6) Compose final prompt (med evidens-policy) (NYT)
     style = style_hint(output_mode, lang)
+
+    evidence_policy = (
+        "EVIDENCE POLICY\n"
+        "• Recommend any intervention (IPR, distalization, elastics, TADs, intrusion, expansion) ONLY if the same term(s) appear in the 'Relevant context' AND the context supports its indication.\n"
+        "• If context lacks such support, explicitly state what data is missing and avoid prescribing that step.\n"
+        "• When key facts are missing (Angle class, Bolton, crowding/spacing in mm, OJ/OB, habits), ask for them under 'What we need' and defer specific plan details.\n"
+        "• Use if/then decision rules. Prefer concise, checkable instructions with mm-values and review criteria.\n"
+    )
+    if facts.get("open_bite") or facts.get("deep_bite") or facts.get("crowding_mm") is None:
+        evidence_policy += "• For space management (IPR/distal/expansion): require Bolton analysis or explicitly mark it as pending.\n"
+
     final_prompt = (
         f"{system_prompt}\n\n"
         "RANKED CONTEXT POLICY\n"
@@ -1023,6 +1157,7 @@ async def api_answer(request: Request):
         "• MAO (by anchors) = authoritative. If conflict, prefer MAO.\n"
         "• MAO (keyword) = secondary fallback.\n"
         "• History = tone only; do not override facts.\n\n"
+        f"{evidence_policy}\n"
         f"{style}\n\n"
         f"IMPORTANT: Use only the information from 'Relevant context' below. "
         f"Do not invent names, case numbers or internal details that are not present in the context.\n\n"
@@ -1049,10 +1184,10 @@ async def api_answer(request: Request):
     else:
         answer_out = answer_markdown
 
-    # 8) Sources
+    # 8) Sources (byg direkte fra combined_chunks, så rækkefølge matcher)
     sources = []
-    for ch in (qa_hits[:2] + mao_ref_hits[:2] + mao_kw_hits[:1] + history_hits[:1]):
-        meta = ch.get("meta", {})
+    for ch in combined_chunks[:6]:
+        meta = ch.get("meta", {}) if isinstance(ch, dict) else {}
         label = _label_from_meta(meta)
         url = meta.get("url") if isinstance(meta, dict) else None
         src = {"label": label, "url": url}
