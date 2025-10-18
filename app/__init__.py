@@ -58,7 +58,7 @@ DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
 QA_JSON_PATH   = os.getenv("QA_JSON_PATH", "mao_qa_rag_export.json")
 QA_JSON_ENABLE = os.getenv("QA_JSON_ENABLE", "1") == "1"
 
-# Optional output mode: markdown | plain | tech_brief
+# Optional output mode: markdown | plain | tech_brief | mail
 OUTPUT_MODE_DEFAULT = os.getenv("OUTPUT_MODE", "markdown").lower()
 
 # Globals
@@ -225,7 +225,8 @@ def make_system_prompt(lang: str, role: str) -> str:
             "FORMAT\n• Kort konklusion (1–2 sætninger)\n• Struktureret protokol (nummererede trin med kliniske parametre: mm IPR, 22 t/d, staging)\n"
             "• Beslutningsregler (if/then) + risici/kontraindikationer\n• Næste skridt (2–4 punkter) + evt. journal-/opgavenote\n\n"
             "SIKKERHED\n• Ingen patient-specifik diagnose/ordination uden tilstrækkelig info; anfør usikkerheder kort. "
-            "• Ingen direkte patienthenvendelse. Opret aldrig interne detaljer, der ikke er i konteksten."
+            "• Ingen direkte patienthenvendelse. Opret aldrig interne detaljer, der ikke er i konteksten.\n\n"
+            "Når output_mode er 'mail': skriv som komplet e-mail i ren tekst og medtag ikke kilder eller sprogfelter i brødteksten."
         )
     return (
         "You are the AI assistant for **Dr. Helle Hatt** (clear-aligner expert). "
@@ -236,7 +237,8 @@ def make_system_prompt(lang: str, role: str) -> str:
         "FORMAT\n• Brief takeaway (1–2 sentences)\n• Structured protocol (numbered; mm IPR, 22 h/day, staging)\n"
         "• Decision rules + risks/contra-indications\n• Next steps (2–4) + optional chart/task note\n\n"
         "SAFETY\n• No patient-specific diagnosis/prescription without adequate info; note uncertainties briefly. "
-        "• Do not address patients. Never invent internal details not in context."
+        "• Do not address patients. Never invent internal details not in context.\n\n"
+        "When output_mode is 'mail': write a complete email in plain text and do not include sources or language fields in the body."
     )
 
 # =========================
@@ -303,7 +305,7 @@ def _json_to_list_any(txt: str) -> List[Dict[str, Any]]:
             for k in ("chunks","items","data","documents","rows"):
                 if isinstance(obj.get(k), list):
                     return only_objs(obj[k])
-            # flatten liste-værdier
+            # flatten liste-væier
             flat = []
             for v in obj.values():
                 if isinstance(v, list):
@@ -567,7 +569,12 @@ def md_to_plain(md: str) -> str:
     return s.strip()
 
 def style_hint(mode: str, lang: str) -> str:
+    """
+    Returnerer en streng, der instruerer modellen i præcis outputformatering.
+    Understøtter: markdown | plain | tech_brief | mail
+    """
     mode = (mode or "markdown").lower()
+
     if lang == "da":
         if mode == "tech_brief":
             return (
@@ -582,20 +589,67 @@ def style_hint(mode: str, lang: str) -> str:
             )
         if mode == "plain":
             return "SVARFORMAT: Returnér samme indhold som normalt, men i ren tekst uden markdown, overskrifter eller emojis."
-        return ""
-    if mode == "tech_brief":
-        return (
-            "FORMAT: Return ONLY a technician-ready prescription block in plain text, "
-            "max 10 lines, no markdown. Use exact labels:\n"
-            "GOAL: <1 line>\n"
-            "INSTRUCTIONS: 1) <short> 2) <short> 3) <short>\n"
-            "ATTACH: <photos/annotations>\n"
-            "CHECK: <what to verify in the setup>\n"
-            "No extra sections."
-        )
-    if mode == "plain":
-        return "FORMAT: Same content as usual, but plain text only. No markdown."
-    return ""
+        if mode == "mail":
+            # Mail-skabelon på dansk — ingen 'Sources/Language' i brødteksten.
+            return (
+                "MAILFORMAT (dansk): Svar som en færdig e-mail i REN TEKST (ingen markdown, ingen emojis). "
+                "Hold det kort, klinisk og kollegialt. Ingen 'Sources', 'Language' eller debug-felter i brødteksten.\n\n"
+                "Brug denne skabelon PRÆCIST (inkl. sektionstitler):\n"
+                "Emne: <kort, præcis emnelinje>\n\n"
+                "Hej,\n\n"
+                "Kort konklusion: <1–2 linjer med hovedbudskab>\n\n"
+                "Plan:\n"
+                "1) <punkt>\n"
+                "2) <punkt>\n"
+                "3) <punkt>\n"
+                "4) <punkt (valgfrit)>\n\n"
+                "Hvad vi har brug for:\n"
+                "- <liste over materiale/fotos/IO-scan osv.>\n\n"
+                "Næste skridt:\n"
+                "- <konkret CTA: send materialet / foreslå mødetid / vi fremsender IPR-kort osv.>\n\n"
+                "Bedste hilsner\n"
+                "[Din signatur]\n\n"
+                "VIGTIGT: Brug kun information fra 'Relevant context'. Vær forsigtig med kategoriske ordinationer; "
+                "brug 'foreslår/kan overvejes' og angiv, at endelig plan afhænger af kliniske fund og compliance."
+            )
+        return ""  # markdown (standard)
+    else:
+        if mode == "tech_brief":
+            return (
+                "FORMAT: Return ONLY a technician-ready prescription block in plain text, "
+                "max 10 lines, no markdown. Use exact labels:\n"
+                "GOAL: <1 line>\n"
+                "INSTRUCTIONS: 1) <short> 2) <short> 3) <short>\n"
+                "ATTACH: <photos/annotations>\n"
+                "CHECK: <what to verify in the setup>\n"
+                "No extra sections."
+            )
+        if mode == "plain":
+            return "FORMAT: Same content as usual, but plain text only. No markdown."
+        if mode == "mail":
+            # Mail-skabelon på engelsk
+            return (
+                "MAIL FORMAT (English): Write a complete email in PLAIN TEXT (no markdown, no emojis). "
+                "Keep it concise, clinical, and collegial. Do NOT include 'Sources', 'Language', or debug fields in the body.\n\n"
+                "Use this exact structure:\n"
+                "Subject: <short, precise subject>\n\n"
+                "Hi,\n\n"
+                "Brief conclusion: <1–2 lines with the key takeaway>\n\n"
+                "Plan:\n"
+                "1) <item>\n"
+                "2) <item>\n"
+                "3) <item>\n"
+                "4) <optional item>\n\n"
+                "What we need:\n"
+                "- <list: photos/IO-scan/etc>\n\n"
+                "Next steps:\n"
+                "- <clear CTA: send assets / book time / we will send IPR map>\n\n"
+                "Best regards\n"
+                "[Your signature]\n\n"
+                "IMPORTANT: Use only the 'Relevant context'. Avoid categorical prescriptions; "
+                "prefer 'suggest/consider' and note that the final plan depends on clinical findings and compliance."
+            )
+        return ""  # markdown (standard)
 
 # =========================
 # Q&A JSON search
@@ -989,10 +1043,9 @@ async def api_answer(request: Request):
         )
 
     answer_plain = md_to_plain(answer_markdown)
-    if output_mode == "plain":
+    if output_mode in ("plain", "tech_brief", "mail"):
+        # 'mail' skal ALTID være ren tekst-epost uden markdown
         answer_out = answer_plain
-    elif output_mode == "tech_brief":
-        answer_out = answer_plain  # model instrueret til ren tekst; dette er sikkerhedsnet
     else:
         answer_out = answer_markdown
 
