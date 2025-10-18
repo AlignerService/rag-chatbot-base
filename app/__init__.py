@@ -415,6 +415,16 @@ async def init_db():
         _SQLITE_OK = False
         logger.exception(f"SQLite check failed: {e}")
 
+    # === NYT: Indlæs historik som RAG-chunks fra SQLite ===
+    try:
+        if _SQLITE_OK:
+            hist_chunks = await sqlite_load_threads_as_chunks(limit=3000)
+            if hist_chunks:
+                _METADATA.extend(hist_chunks)
+                logger.info(f"Loaded {len(hist_chunks)} history chunks into metadata")
+    except Exception as e:
+        logger.info(f"history load skipped: {e}")
+
 # =========================
 # SQLite helpers (Zoho ticket text)
 # =========================
@@ -496,6 +506,52 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
         logger.exception(f"SQLite latest-thread lookup failed: {e}")
         return ""
 
+# === NYT: Indlæs flere historiktråde som chunks ===
+async def sqlite_load_threads_as_chunks(limit:int=2000) -> List[Dict[str,Any]]:
+    """
+    Læser 'tekstlige' kolonner på tværs af tabeller og laver generiske chunks.
+    Returnerer items i form: {"text":..., "meta": {...}} der kan føjes til _METADATA.
+    """
+    if not _SQLITE_OK:
+        return []
+    out=[]
+    try:
+        async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            tables=[]
+            async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
+                async for row in cur: tables.append(row["name"])
+            text_cols = ["plainText","plaintext","text","content","body","message","message_text"]
+            id_cols   = ["ticketId","ticket_id","tid","id"]
+            who_cols  = ["contactId","contact_id","from","sender","author"]
+            time_cols = ["createdTime","createdAt","created_at","date","timestamp","time","updated_at"]
+
+            for table in tables:
+                try:
+                    async with db.execute(f"PRAGMA table_info('{table}')") as cur:
+                        cols=[dict(r) async for r in cur]
+                    cn = {c["name"] for c in cols}
+                    tcol = next((c for c in text_cols if c in cn), None)
+                    if not tcol: 
+                        continue
+                    kcol = next((c for c in id_cols if c in cn), None)
+                    wcol = next((c for c in who_cols if c in cn), None)
+                    dcol = next((c for c in time_cols if c in cn), None)
+                    sql = f"SELECT {tcol} AS txt, {kcol if kcol else 'NULL'} AS kid, {wcol if wcol else 'NULL'} AS who, {dcol if dcol else 'NULL'} AS dt FROM '{table}' ORDER BY rowid DESC LIMIT ?"
+                    async with db.execute(sql, (limit,)) as cur:
+                        async for r in cur:
+                            txt=(r["txt"] or "").strip()
+                            if not txt or len(txt)<40: 
+                                continue
+                            meta={"source":"HistoryDB","title":f"{table}",
+                                  "ticketId": r["kid"], "contact": r["who"], "date": r["dt"]}
+                            out.append({"text": txt, "meta": meta})
+                except Exception:
+                    continue
+    except Exception as e:
+        logger.info(f"sqlite_load_threads_as_chunks: {e}")
+    return out
+
 # =========================
 # Text helpers
 # =========================
@@ -574,7 +630,18 @@ def md_to_plain(md: str) -> str:
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
 
-# ===== Klinisk faktekstraktor (NYT) =====
+# === NYT: De-identifikation af PII i kontekst ===
+def _deidentify(txt: str) -> str:
+    if not txt:
+        return txt
+    s = txt
+    s = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[email]", s)
+    s = re.sub(r"\+?\d[\d\-\s]{6,}\d", "[phone]", s)
+    s = re.sub(r"\b\d{6}\-?\d{4}\b", "[id]", s)
+    s = re.sub(r"\b([A-ZÆØÅ][a-zæøå]{2,})(\s+[A-ZÆØÅ][a-zæøå]{2,}){0,2}\b", "[name]", s)
+    return s
+
+# ===== Klinisk faktekstraktor =====
 def extract_facts(text: str) -> Dict[str, Any]:
     t = (text or "").lower()
     facts = {
@@ -613,7 +680,7 @@ def build_query_boosters(facts: Dict[str, Any]) -> List[str]:
 def _label_join(meta: Dict[str, Any], text: str) -> str:
     return (_label_from_meta(meta) + "|" + (_strip_html(text)[:120])).lower()
 
-# ===== Embeddings + semantic rerank + MMR (NYT) =====
+# ===== Embeddings + semantic rerank + MMR =====
 @lru_cache(maxsize=4096)
 def _embed_cached(text: str) -> List[float]:
     from openai import OpenAI  # type: ignore
@@ -791,7 +858,6 @@ _QA_WEIGHTS = {
     "anchorage": 2.0, "torque": 2.0, "intrusion": 1.8, "extrusion": 1.8, "rotation": 1.2,
     "crossbite": 1.8, "retention": 1.8, "scan": 1.2, "x-rays": 1.2, "cbct": 1.2, "trimline": 1.5,
 }
-# Løft de kliniske styringsord en smule (NYT)
 _QA_WEIGHTS.update({
     "angle": 1.5, "klasse": 1.5, "i": 0.6, "ii": 1.0, "iii": 1.0,
     "vertical": 1.6, "mpa": 1.6, "bolton": 2.2, "overjet": 1.2, "overbite": 1.2,
@@ -1056,7 +1122,7 @@ async def api_answer(request: Request):
     role_disp = role_label(lang, role)
     system_prompt = make_system_prompt(lang, role)
 
-    # 4) Cross-lingual retrieval + facts (NYT)
+    # 4) Cross-lingual retrieval + facts
     retrieval_query = await translate_to_english_if_needed(user_text, lang)
     if retrieval_query != user_text:
         logger.info("Query translated to English for retrieval.")
@@ -1081,7 +1147,7 @@ async def api_answer(request: Request):
     except Exception as e:
         logger.info(f"MAO keyword retrieval failed: {e}")
 
-    # Merge kandidater, dedup, semantisk rerank, MMR-diversitet (NYT)
+    # Merge kandidater, dedup, semantisk rerank, MMR-diversitet
     cands = qa_hits_raw + mao_ref_hits_raw + mao_kw_hits_raw
     seen = set(); uniq=[]
     for c in cands:
@@ -1094,14 +1160,32 @@ async def api_answer(request: Request):
     sem_top = semantic_rerank(boosted_query, uniq, topk=RERANK_TOPK)
     diversified = mmr_select(boosted_query, sem_top, lam=MMR_LAMBDA, m=min(8, len(sem_top)))
 
-    # --- historical tone (last thread), optional ---
+    # --- historical tone/content (NYT: prioriter ved match) ---
     history_hits = []
     if ticket_id:
         hist = await sqlite_latest_thread_plaintext(ticket_id, contact_id)
         if hist:
             history_hits = [{"text": hist[:1500], "meta": {"source": "History", "title": "Recent thread"}}]
 
-    combined_chunks = diversified + history_hits
+    def text_of(ch): 
+        return ch.get("text","") if isinstance(ch,dict) else str(ch)
+
+    def roughly_matches(q, hist_txt):
+        ql = q.lower()
+        ht = (hist_txt or "").lower()
+        toks = [t for t in re.split(r"[^a-z0-9æøåöüß]+", ql) if len(t)>3]
+        hit = sum(1 for t in set(toks) if t in ht)
+        return hit >= 2
+
+    history_primary = []
+    for h in history_hits:
+        if roughly_matches(retrieval_query, text_of(h)):
+            history_primary.append(h)
+
+    if history_primary:
+        combined_chunks = history_primary + diversified
+    else:
+        combined_chunks = diversified + history_hits
 
     # 5) Failsafe if no context at all
     if not combined_chunks:
@@ -1131,13 +1215,13 @@ async def api_answer(request: Request):
             "message": {"content": answer, "language": lang}
         }
 
-    # Context text
+    # Context text (NYT: de-identificér)
     def _clip(txt: str, max_len: int = 1200) -> str:
         return (txt[:max_len] + "…") if len(txt) > max_len else txt
 
-    context = "\n\n".join(_clip(ch.get("text", "") if isinstance(ch, dict) else str(ch)) for ch in combined_chunks)[:9000]
+    context = "\n\n".join(_clip(_deidentify(text_of(ch))) for ch in combined_chunks)[:9000]
 
-    # 6) Compose final prompt (med evidens-policy) (NYT)
+    # 6) Compose final prompt (med evidens-policy)
     style = style_hint(output_mode, lang)
 
     evidence_policy = (
@@ -1153,10 +1237,11 @@ async def api_answer(request: Request):
     final_prompt = (
         f"{system_prompt}\n\n"
         "RANKED CONTEXT POLICY\n"
-        "• Q&A evidence = primary clinical guidance.\n"
-        "• MAO (by anchors) = authoritative. If conflict, prefer MAO.\n"
+        "• HistoryDB (same clinic/ticket or high semantic match) = primary evidence.\n"
+        "• Q&A evidence = primary when HistoryDB is absent or weak.\n"
+        "• MAO (by anchors) = authoritative reference; if conflict with HistoryDB, prefer MAO unless HistoryDB documents a clinic-approved protocol.\n"
         "• MAO (keyword) = secondary fallback.\n"
-        "• History = tone only; do not override facts.\n\n"
+        "• History (tone-only) = for stylistic alignment if not a strong match.\n\n"
         f"{evidence_policy}\n"
         f"{style}\n\n"
         f"IMPORTANT: Use only the information from 'Relevant context' below. "
