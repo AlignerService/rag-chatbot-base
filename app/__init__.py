@@ -999,6 +999,12 @@ async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
 # =========================
 # LLM translation & calls
 # =========================
+
+# >>> ADDED: helper to label language for prompt <<<
+def _lang_label_for_prompt(lang: str) -> str:
+    m = {"da": "Danish", "de": "German", "fr": "French", "en": "English"}
+    return m.get((lang or "en").lower(), "English")
+
 async def translate_to_english_if_needed(text: str, lang: str) -> str:
     if lang == "en" or not text:
         return text
@@ -1265,33 +1271,33 @@ async def api_answer(request: Request):
         "Do not invent names, case numbers or internal details that are not present in the context.\n\n"
         f"User message:\n{user_text}\n\n"
         f"Relevant context (may be in English and may be partial):\n{context}\n\n"
-        "Answer in English only:"
+        f"Answer in {_lang_label_for_prompt(lang)} only:"
     )
     logger.info(f"final_prompt(sample 400): {final_prompt[:400]}")
 
-    # 7) LLM (always generate in English)
+    # 7) LLM (svar genereres i brugerens sprog via prompt ovenfor)
     try:
         answer_markdown = await get_rag_answer(final_prompt)
     except Exception as e:
         logger.exception(f"OpenAI call failed: {e}")
         answer_markdown = "Sorry, an error occurred while generating the answer."
 
-    # 7b) Optional auto-translate back to user's language (skip for mail)
-    if AUTO_TRANSLATE_OUTPUT and lang and lang != "en" and lang.lower() in AUTO_TRANSLATE_LANGS and output_mode != "mail":
+    # 7b) Optional auto-translate back to user's language (tilladt også i mail-mode)
+    if AUTO_TRANSLATE_OUTPUT and lang and lang != "en" and lang.lower() in AUTO_TRANSLATE_LANGS:
         try:
             translated = await translate_english_to(answer_markdown, lang)
             if translated and translated.strip():
                 answer_markdown = translated
                 logger.info(f"Auto-translated output to '{lang}'.")
             else:
-                logger.info("Auto-translate produced empty output; keeping English.")
+                logger.info("Auto-translate produced empty output; keeping original.")
         except Exception as e:
             logger.info(f"Auto-translate skipped due to error: {e}")
 
     # 8) Plain rendering decision AFTER possible translation
     answer_plain = md_to_plain(answer_markdown)
     if output_mode in ("plain", "tech_brief", "mail"):
-        # 'mail' skal ALTID være ren tekst-epost på ENGELSK (vi oversatte ikke mail ovenfor)
+        # 'mail' er altid ren tekst. Sproget følger detekteret lang (da/de/fr/en).
         answer_out = answer_plain
     else:
         answer_out = answer_markdown
