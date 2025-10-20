@@ -1230,7 +1230,7 @@ def _openai_complete_blocking(final_prompt: str) -> str:
         return "I could not generate a response due to an internal error."
 
 # =========================
-# Policy helpers (stop-ordrer, boilerplate, fallbacks)
+# Policy helpers (stop-ordrer, mail-guidance, fallbacks)
 # =========================
 
 def stop_orders_block(lang: str) -> str:
@@ -1241,18 +1241,33 @@ def stop_orders_block(lang: str) -> str:
     return ("POLICY: No passwords/tokens/private links. No patient names. No cross-customer case IDs. "
             "No invasive clinical instructions without sufficient data.")
 
-def customer_mail_boilerplate(lang: str, intent: str) -> str:
+def customer_mail_guidance(lang: str, intent: str) -> str:
+    if lang == "da":
+        if intent == "status_request":
+            return "MAIL: 3 blokke — kvittering, kort status, næste skridt. Ingen kliniske instruktioner."
+        if intent == "admin":
+            return "MAIL: 1–2 linjer forklaring + 1–3 konkrete trin eller link. Ingen kliniske instruktioner."
+        return ""
+    else:
+        if intent == "status_request":
+            return "MAIL: 3 blocks — receipt, brief status, next steps. No clinical instructions."
+        if intent == "admin":
+            return "MAIL: 1–2 lines + 1–3 concrete steps or link. No clinical instructions."
+        return ""
+
+def fallback_mail(lang: str, intent: str) -> str:
     if lang != "da":
         lang = "da"
     if intent == "status_request":
-        return ("Tak for henvendelsen. Vores team af erfarne tandlæger og ortodontister er gået i gang med at se på din case. "
-                "Vi vender tilbage så hurtigt som muligt.\n\nVenlig hilsen\nTandlæge Helle Hatt")
-    if intent == "admin":
-        return ("Tak for informationen. Vi kigger på det og vender tilbage så hurtigt som muligt.\n\n"
+        return ("Tak for din henvendelse. For at tjekke status skal vi bruge case-ID og hvilket alignerbrand der er tale om "
+                "(fx Invisalign, Spark eller ClearCorrect). Send det gerne, så følger vi op hurtigst muligt.\n\n"
                 "Venlig hilsen\nTandlæge Helle Hatt")
-    # clinical_support fallback boilerplate (kort SLA)
-    return ("Mange tak for beskeden. Vi vender tilbage så snart vi har haft mulighed for at se på din case. "
-            "Forvent et svar inden for 24 timer på hverdage.\n\nVenlig hilsen\nTandlæge Helle Hatt")
+    if intent == "admin":
+        return ("Tak for beskeden. Angiv venligst hvad der skal ændres (fx levering, faktura, adgang) og evt. reference, "
+                "så vender vi hurtigt tilbage.\n\nVenlig hilsen\nTandlæge Helle Hatt")
+    return ("Tak for din besked. For at give et konkret klinisk svar må du gerne sende relevante fotos/IOS-scan samt kort beskrivelse "
+            "af udfordringen (fx tracking/rotation/åbent bid). Vi vender tilbage inden for 24 timer på hverdage.\n\n"
+            "Venlig hilsen\nTandlæge Helle Hatt")
 
 # =========================
 # Endpoints
