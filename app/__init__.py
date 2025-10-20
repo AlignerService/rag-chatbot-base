@@ -1,4 +1,3 @@
-# app/__init__.py
 import os
 import json
 import logging
@@ -66,11 +65,6 @@ EMBED_MODEL   = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-large")
 RETR_K        = int(os.getenv("RETR_K", "40"))           # kandidat-mængde før rerank
 RERANK_TOPK   = int(os.getenv("RERANK_TOPK", "12"))      # semantisk topK
 MMR_LAMBDA    = float(os.getenv("MMR_LAMBDA", "0.4"))    # diversitet 0..1
-
-# ===== Auto-translate (NYT) =====
-AUTO_TRANSLATE_OUTPUT = os.getenv("AUTO_TRANSLATE_OUTPUT", "1") == "1"
-_AUTO_LANGS_RAW = os.getenv("AUTO_TRANSLATE_LANGS", "da,de,fr")
-AUTO_TRANSLATE_LANGS = {s.strip().lower() for s in _AUTO_LANGS_RAW.split(",") if s.strip()}
 
 # Globals
 _FAISS_INDEX = None
@@ -236,7 +230,8 @@ def make_system_prompt(lang: str, role: str) -> str:
             "FORMAT\n• Kort konklusion (1–2 sætninger)\n• Struktureret protokol (nummererede trin med kliniske parametre: mm IPR, 22 t/d, staging)\n"
             "• Beslutningsregler (if/then) + risici/kontraindikationer\n• Næste skridt (2–4 punkter) + evt. journal-/opgavenote\n\n"
             "SIKKERHED\n• Ingen patient-specifik diagnose/ordination uden tilstrækkelig info; anfør usikkerheder kort. "
-            "• Ingen direkte patienthenvendelse. Opret aldrig interne detaljer, der ikke er i konteksten."
+            "• Ingen direkte patienthenvendelse. Opret aldrig interne detaljer, der ikke er i konteksten.\n\n"
+            "Når output_mode er 'mail': skriv som komplet e-mail i ren tekst og medtag ikke kilder eller sprogfelter i brødteksten."
         )
     return (
         "You are the AI assistant for **Dr. Helle Hatt** (clear-aligner expert). "
@@ -247,7 +242,8 @@ def make_system_prompt(lang: str, role: str) -> str:
         "FORMAT\n• Brief takeaway (1–2 sentences)\n• Structured protocol (numbered; mm IPR, 22 h/day, staging)\n"
         "• Decision rules + risks/contra-indications\n• Next steps (2–4) + optional chart/task note\n\n"
         "SAFETY\n• No patient-specific diagnosis/prescription without adequate info; note uncertainties briefly. "
-        "• Do not address patients. Never invent internal details not in context."
+        "• Do not address patients. Never invent internal details not in context.\n\n"
+        "When output_mode is 'mail': write a complete email in plain text and do not include sources or language fields in the body."
     )
 
 # =========================
@@ -706,7 +702,7 @@ def semantic_rerank(query: str, candidates: List[Dict[str, Any]], topk: int) -> 
         for c in candidates:
             txt = _strip_html(_extract_text_from_meta(c))
             emb = _embed_cached(txt[:2000])
-            scored.append((_cos(q_emb, emb), c))
+            scored.append(( _cos(q_emb, emb), c))
         scored.sort(key=lambda x: x[0], reverse=True)
         return [c for _, c in scored[:topk]]
     except Exception as e:
@@ -722,7 +718,7 @@ def mmr_select(query: str, items: List[Dict[str, Any]], lam: float, m: int) -> L
             txt = _strip_html(_extract_text_from_meta(it))
             embs.append(_embed_cached(txt[:2000]))
         selected, used = [], set()
-        sims_q = [_cos(q_emb, e) for e in embs]
+        sims_q = [ _cos(q_emb, e) for e in embs ]
         while len(selected) < min(m, len(items)):
             best_i, best_score = -1, -1.0
             for i in range(len(items)):
@@ -999,32 +995,12 @@ async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
 # =========================
 # LLM translation & calls
 # =========================
-
-# >>> ADDED: helper to label language for prompt <<<
-def _lang_label_for_prompt(lang: str) -> str:
-    m = {"da": "Danish", "de": "German", "fr": "French", "en": "English"}
-    return m.get((lang or "en").lower(), "English")
-
 async def translate_to_english_if_needed(text: str, lang: str) -> str:
     if lang == "en" or not text:
         return text
     prompt = (
         "Translate the following text to English only. "
         "Do not add explanations or metadata. Output only the translated text.\n\n"
-        f"Text:\n{text}"
-    )
-    out = await _llm_short(prompt)
-    return out.strip() if out else text
-
-async def translate_english_to(text: str, target_lang: str) -> str:
-    """
-    Oversæt fra engelsk til 'target_lang' uden ekstra forklaringer. Bevar linjeskift/markdown.
-    """
-    if not text or not target_lang or target_lang.lower() == "en":
-        return text
-    prompt = (
-        f"Translate the following English text to {target_lang} only. "
-        "Preserve the structure (line breaks, lists, headings) and do not add any explanations.\n\n"
         f"Text:\n{text}"
     )
     out = await _llm_short(prompt)
@@ -1267,42 +1243,32 @@ async def api_answer(request: Request):
         "• History (tone-only) = for stylistic alignment if not a strong match.\n\n"
         f"{evidence_policy}\n"
         f"{style}\n\n"
-        "IMPORTANT: Use only the information from 'Relevant context' below. "
-        "Do not invent names, case numbers or internal details that are not present in the context.\n\n"
+        f"IMPORTANT: Use only the information from 'Relevant context' below. "
+        f"Do not invent names, case numbers or internal details that are not present in the context.\n\n"
         f"User message:\n{user_text}\n\n"
         f"Relevant context (may be in English and may be partial):\n{context}\n\n"
-        f"Answer in {_lang_label_for_prompt(lang)} only:"
+        f"Answer in the user's language (detected: {lang}, role: {role_disp}):"
     )
     logger.info(f"final_prompt(sample 400): {final_prompt[:400]}")
 
-    # 7) LLM (svar genereres i brugerens sprog via prompt ovenfor)
+    # 7) LLM
     try:
         answer_markdown = await get_rag_answer(final_prompt)
     except Exception as e:
         logger.exception(f"OpenAI call failed: {e}")
-        answer_markdown = "Sorry, an error occurred while generating the answer."
+        answer_markdown = (
+            "Beklager, der opstod en fejl under genereringen af svaret." if lang == "da"
+            else "Sorry, an error occurred while generating the answer."
+        )
 
-    # 7b) Optional auto-translate back to user's language (tilladt også i mail-mode)
-    if AUTO_TRANSLATE_OUTPUT and lang and lang != "en" and lang.lower() in AUTO_TRANSLATE_LANGS:
-        try:
-            translated = await translate_english_to(answer_markdown, lang)
-            if translated and translated.strip():
-                answer_markdown = translated
-                logger.info(f"Auto-translated output to '{lang}'.")
-            else:
-                logger.info("Auto-translate produced empty output; keeping original.")
-        except Exception as e:
-            logger.info(f"Auto-translate skipped due to error: {e}")
-
-    # 8) Plain rendering decision AFTER possible translation
     answer_plain = md_to_plain(answer_markdown)
     if output_mode in ("plain", "tech_brief", "mail"):
-        # 'mail' er altid ren tekst. Sproget følger detekteret lang (da/de/fr/en).
+        # 'mail' skal ALTID være ren tekst-epost uden markdown
         answer_out = answer_plain
     else:
         answer_out = answer_markdown
 
-    # 9) Sources (byg direkte fra combined_chunks, så rækkefølge matcher)
+    # 8) Sources (byg direkte fra combined_chunks, så rækkefølge matcher)
     sources = []
     for ch in combined_chunks[:6]:
         meta = ch.get("meta", {}) if isinstance(ch, dict) else {}
