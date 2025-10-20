@@ -152,6 +152,110 @@ def detect_language(text: str) -> str:
     return "en"
 
 # =========================
+# Intent detection (simple heuristic)
+# =========================
+def detect_intent(text: str, lang: str) -> str:
+    t = (text or "").lower()
+    if lang == "da":
+        status_keys = ["status", "opdatering", "hvornår", "forventet", "eta", "ticket", "case", "sag", "case id", "reference"]
+        admin_keys  = ["faktura", "betaling", "konto", "login", "adgang", "levering", "fragt", "retur", "reklamation", "pris", "prisliste"]
+    elif lang == "de":
+        status_keys = ["status", "update", "wann", "eta", "ticket", "fall", "case", "referenz"]
+        admin_keys  = ["rechnung", "zahlung", "konto", "login", "zugang", "lieferung", "versand", "retoure", "beschwerde", "preis"]
+    else:
+        status_keys = ["status", "update", "when", "eta", "ticket", "case", "reference", "order"]
+        admin_keys  = ["invoice", "payment", "account", "login", "access", "delivery", "shipping", "return", "complaint", "price", "pricelist"]
+
+    if any(k in t for k in status_keys):
+        return "status_request"
+    if any(k in t for k in admin_keys):
+        return "admin"
+    return "clinical_support"
+
+# =========================
+# Customer-facing system + format hints (professional customers)
+# =========================
+def make_customer_system_prompt(lang: str) -> str:
+    if lang == "da":
+        return (
+            "Du skriver til en professionel kunde (tandlæge/ortodontist). Svar kort, klart og venligt. "
+            "For status/admin: ingen kliniske instruktioner. Bekræft anmodning, angiv næste skridt, og bed kun om nødvendige oplysninger.\n\n"
+            "SIKKERHED\n• Del ikke adgangskoder eller interne systemoplysninger. • Ingen patientnavne. • Brug kun case-id som kunden selv nævner.\n"
+        )
+    return (
+        "You are writing to a professional customer (dentist/orthodontist). Keep it brief and clear. "
+        "For status/admin: no clinical instructions. Acknowledge, give next steps, ask only for necessary fields.\n\n"
+        "SAFETY\n• No passwords or internal system details. • No patient names. • Use only the case ID the customer provided.\n"
+    )
+
+# =========================
+# Brand & case-id detection
+# =========================
+_BRAND_PATTERNS = [
+    ("Invisalign",   re.compile(r"\b(\d{8})\b")),          # e.g. 26034752
+    ("Spark",        re.compile(r"\b(\d{7})\b")),          # e.g. 2928247
+    ("Angel Aligner",re.compile(r"\b([A-Z0-9]{6})\b")),     # e.g. 97KP8K
+    ("ClearCorrect", re.compile(r"\b(\d{7})\b")),          # e.g. 2027367
+    ("SureSmile",    re.compile(r"\b([A-Z0-9]{4})\b")),     # e.g. J8U3
+    ("TrioClear",    re.compile(r"\b(\d{5})\b")),          # e.g. 45447
+    # Clarity: mangler sikre eksempler -> ikke aktiveret mønster endnu
+]
+
+_BRAND_ALIASES = {
+    "invisalign": "Invisalign",
+    "spark": "Spark",
+    "angel": "Angel Aligner",
+    "angel aligner": "Angel Aligner",
+    "clearcorrect": "ClearCorrect",
+    "sure smile": "SureSmile",
+    "suresmile": "SureSmile",
+    "trioclear": "TrioClear",
+    "clarity": "Clarity",
+}
+
+def _normalize_brand(s: str) -> Optional[str]:
+    if not s:
+        return None
+    t = s.strip().lower()
+    return _BRAND_ALIASES.get(t) or None
+
+def extract_brand_and_case(subject: str, body: str) -> Dict[str, Optional[str]]:
+    """
+    Heuristik: søg efter brand-hints; brug derefter brand-specifikt mønster. Hvis brand ikke kendes, prøv alle mønstre og vælg entydigt hit.
+    """
+    txt = f"{subject or ''}\n{body or ''}"
+    low = txt.lower()
+
+    brand_hint = None
+    for alias, canon in _BRAND_ALIASES.items():
+        if alias in low:
+            brand_hint = canon
+            break
+
+    found_brand, found_case = None, None
+
+    # hvis vi har et brand hint, prøv kun det tilsvarende mønster
+    if brand_hint:
+        for name, pat in [(n,p) for (n,p, *_) in _BRAND_PATTERNS]:
+            if name == brand_hint:
+                m = pat.search(txt.upper() if name in ("Angel Aligner", "SureSmile") else txt)
+                if m:
+                    found_brand, found_case = name, m.group(1)
+                break
+
+    # ellers prøv alle og vælg entydigt mønster
+    if not found_case:
+        hits = []
+        for name, pat in [(n,p) for (n,p, *_) in _BRAND_PATTERNS]:
+            m = pat.search(txt.upper() if name in ("Angel Aligner", "SureSmile") else txt)
+            if m:
+                hits.append((name, m.group(1)))
+        if len(hits) == 1:
+            found_brand, found_case = hits[0]
+
+    return {"brand": found_brand, "caseId": found_case}
+
+# =========================
 # Role detection (heuristic)
 # =========================
 def detect_role(text: str, lang: str) -> str:
@@ -551,6 +655,76 @@ async def sqlite_load_threads_as_chunks(limit:int=2000) -> List[Dict[str,Any]]:
         logger.info(f"sqlite_load_threads_as_chunks: {e}")
     return out
 
+# === Tone-of-voice snippets from SQLite ===
+async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -> List[str]:
+    """Hent korte uddrag fra nylige udgående svar til samme kunde-e-mail. Bruges kun som style seed i prompten."""
+    if not _SQLITE_OK or not to_email:
+        return []
+    try:
+        to_email = to_email.strip().lower()
+        out: List[str] = []
+        async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            tables: List[str] = []
+            async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
+                async for row in cur:
+                    tables.append(row["name"])
+            email_cols = ["to","recipient","toEmail","to_email","email_to","address_to","customer_email"]
+            from_cols  = ["from","sender","fromEmail","from_email","email_from"]
+            dir_cols   = ["direction","dir","type"]
+            text_cols  = ["plainText","plaintext","text","content","body","message","message_text"]
+            time_cols  = ["createdTime","createdAt","created_at","date","timestamp","time","updated_at"]
+
+            for table in tables:
+                try:
+                    async with db.execute(f"PRAGMA table_info('{table}')") as cur:
+                        cols = [dict(r) async for r in cur]
+                    cn = {c["name"] for c in cols}
+
+                    tcol = next((c for c in text_cols if c in cn), None)
+                    if not tcol:
+                        continue
+                    tocol = next((c for c in email_cols if c in cn), None)
+                    dcol  = next((c for c in dir_cols if c in cn), None)
+                    timec = next((c for c in time_cols if c in cn), None)
+
+                    where = []
+                    params: List[Any] = []
+                    if tocol:
+                        where.append(f"LOWER({tocol}) = ?")
+                        params.append(to_email)
+                    if dcol:
+                        where.append(f"LOWER({dcol}) IN ('out','sent','reply','outbound')")
+                    where_clause = ("WHERE " + " AND ".join(where)) if where else ""
+                    order_clause = f"ORDER BY {timec} DESC" if timec else "ORDER BY rowid DESC"
+                    sql = f"SELECT {tcol} AS txt FROM '{table}' {where_clause} {order_clause} LIMIT ?"
+                    params.append(max(n*2, n))
+
+                    async with db.execute(sql, tuple(params)) as cur:
+                        async for r in cur:
+                            t = (r["txt"] or "").strip()
+                            t = _strip_html(t)
+                            if len(t) >= min_len:
+                                out.append(t[:600])
+                            if len(out) >= n:
+                                break
+                except Exception:
+                    continue
+        # dedup
+        uniq: List[str] = []
+        seen: set = set()
+        for s in out:
+            k = s[:120].lower()
+            if k not in seen:
+                uniq.append(s)
+                seen.add(k)
+            if len(uniq) >= n:
+                break
+        return uniq
+    except Exception as e:
+        logger.info(f"sqlite_style_snippets: {e}")
+        return []
+
 # =========================
 # Text helpers
 # =========================
@@ -914,6 +1088,7 @@ def _qa_to_chunk(it: Dict[str, Any]) -> Dict[str, Any]:
 # =========================
 # Retrieval helpers (generic metadata) + MAO helpers
 # =========================
+
 def _get_meta_value(item: Dict[str, Any], key: str):
     if not isinstance(item, dict):
         return None
@@ -1055,6 +1230,31 @@ def _openai_complete_blocking(final_prompt: str) -> str:
         return "I could not generate a response due to an internal error."
 
 # =========================
+# Policy helpers (stop-ordrer, boilerplate, fallbacks)
+# =========================
+
+def stop_orders_block(lang: str) -> str:
+    if lang == "da":
+        return ("POLICY: Ingen adgangskoder/tokens/private links. Ingen patientnavne. "
+                "Ingen deling af case-id på tværs af kunder. Ingen kliniske anvisninger der ændrer biologi "
+                "(TADs, >1–2 mm distalisation, ekspansion, specifik IPR) uden tilstrækkelige data (Bolton, crowding/spacing mm, OJ/OB).")
+    return ("POLICY: No passwords/tokens/private links. No patient names. No cross-customer case IDs. "
+            "No invasive clinical instructions without sufficient data.")
+
+def customer_mail_boilerplate(lang: str, intent: str) -> str:
+    if lang != "da":
+        lang = "da"
+    if intent == "status_request":
+        return ("Tak for henvendelsen. Vores team af erfarne tandlæger og ortodontister er gået i gang med at se på din case. "
+                "Vi vender tilbage så hurtigt som muligt.\n\nVenlig hilsen\nTandlæge Helle Hatt")
+    if intent == "admin":
+        return ("Tak for informationen. Vi kigger på det og vender tilbage så hurtigt som muligt.\n\n"
+                "Venlig hilsen\nTandlæge Helle Hatt")
+    # clinical_support fallback boilerplate (kort SLA)
+    return ("Mange tak for beskeden. Vi vender tilbage så snart vi har haft mulighed for at se på din case. "
+            "Forvent et svar inden for 24 timer på hverdage.\n\nVenlig hilsen\nTandlæge Helle Hatt")
+
+# =========================
 # Endpoints
 # =========================
 @app.get("/")
@@ -1080,6 +1280,10 @@ async def api_answer(request: Request):
     output_mode = OUTPUT_MODE_DEFAULT
     if isinstance(body, dict) and "output_mode" in body:
         output_mode = str(body.get("output_mode") or OUTPUT_MODE_DEFAULT).lower()
+
+    # Extra optional fields
+    from_email = (body.get("fromEmail") or "").strip().lower() if isinstance(body, dict) else ""
+    subject = (body.get("subject") or "").strip() if isinstance(body, dict) else ""
 
     # 2) Extract Zoho-style IDs first (preferred flow)
     user_text = ""
@@ -1115,11 +1319,24 @@ async def api_answer(request: Request):
 
     logger.info(f"user_text(sample 300): {user_text[:300]}")
 
-    # 3) Language + Role + Prompt
+    # 3) Language + Role + Intent + Prompt
     lang = detect_language(user_text)
     role = detect_role(user_text, lang)
     role_disp = role_label(lang, role)
-    system_prompt = make_system_prompt(lang, role)
+    intent = detect_intent(user_text, lang)
+
+    # Auto-select mail for status/admin if caller didn't force a mode
+    if intent in ("status_request", "admin") and not (isinstance(body, dict) and "output_mode" in body):
+        output_mode = "mail"
+
+    # choose system prompt: for status/admin keep it short, no clinic
+    if intent in ("status_request", "admin"):
+        system_prompt = make_customer_system_prompt(lang)
+    else:
+        system_prompt = make_system_prompt(lang, role)
+
+    # Extract brand/case
+    brand_case = extract_brand_and_case(subject, user_text) if os.getenv("BRAND_ENABLE","1") == "1" else {"brand": None, "caseId": None}
 
     # 4) Cross-lingual retrieval + facts
     retrieval_query = await translate_to_english_if_needed(user_text, lang)
@@ -1188,20 +1405,14 @@ async def api_answer(request: Request):
 
     # 5) Failsafe if no context at all
     if not combined_chunks:
-        safe_generic = {
-            "da": (
-                "Grundprotokol når kontekst mangler:\n"
-                "1) Screening/diagnose → 2) Plan (staging, IPR, attachments) → 3) Start → 4) Kontroller/tracking → 5) Refinement → 6) Retention.\n"
-                "Næste skridt: indlæs flere kildedata i RAG for mere målrettet svar."
-            ),
-            "en": (
-                "Baseline protocol when context is missing:\n"
-                "1) Screening/diagnosis → 2) Planning (staging, IPR, attachments) → 3) Start → 4) Reviews/tracking → 5) Refinement → 6) Retention.\n"
-                "Next steps: load more sources into the RAG."
-            ),
-        }
+        # Fallback mail pr. intent
+        fb = customer_mail_boilerplate(lang, intent) if intent in ("status_request","admin","clinical_support") else ""
+        answer = fb or (
+            "Grundprotokol når kontekst mangler:\n"
+            "1) Screening/diagnose → 2) Plan (staging, IPR, attachments) → 3) Start → 4) Kontroller/tracking → 5) Refinement → 6) Retention.\n"
+            "Næste skridt: indlæs flere kildedata i RAG for mere målrettet svar."
+        )
         sources = []
-        answer = safe_generic.get(lang, safe_generic["en"])
         return {
             "finalAnswer": answer,
             "finalAnswerMarkdown": answer,
@@ -1222,6 +1433,15 @@ async def api_answer(request: Request):
 
     # 6) Compose final prompt (med evidens-policy)
     style = style_hint(output_mode, lang)
+    policy_block = stop_orders_block(lang)
+
+    # style seed fra SQLite historik til samme kunde
+    snippets = await sqlite_style_snippets(from_email, n=int(os.getenv("STYLE_SNIPPETS_N","4")))
+    style_seed = "\n\n".join(f"— {s}" for s in snippets) if snippets else ""
+
+    # Tilføj kort kundeboilerplate for status/admin
+    if intent in ("status_request", "admin"):
+        style += "\n" + customer_mail_boilerplate(lang, intent)
 
     evidence_policy = (
         "EVIDENCE POLICY\n"
@@ -1241,10 +1461,12 @@ async def api_answer(request: Request):
         "• MAO (by anchors) = authoritative reference; if conflict with HistoryDB, prefer MAO unless HistoryDB documents a clinic-approved protocol.\n"
         "• MAO (keyword) = secondary fallback.\n"
         "• History (tone-only) = for stylistic alignment if not a strong match.\n\n"
+        f"{policy_block}\n\n"
         f"{evidence_policy}\n"
-        f"{style}\n\n"
-        f"IMPORTANT: Use only the information from 'Relevant context' below. "
-        f"Do not invent names, case numbers or internal details that are not present in the context.\n\n"
+        f"{style}\n"
+        + (f"\nSTYLE SNIPPETS (tidligere mails til samme kunde):\n{style_seed}\n" if style_seed else "")
+        + "\nIMPORTANT: Use only the information from 'Relevant context' below. Do not invent names, case numbers or internal details that are not present in the context.\n\n"
+        f"Known brand/case (if any): {brand_case}\n\n"
         f"User message:\n{user_text}\n\n"
         f"Relevant context (may be in English and may be partial):\n{context}\n\n"
         f"Answer in the user's language (detected: {lang}, role: {role_disp}):"
@@ -1280,6 +1502,10 @@ async def api_answer(request: Request):
         if isinstance(meta, dict) and (meta.get("anchor_id") or meta.get("anchorId")):
             src["anchor_id"] = meta.get("anchor_id") or meta.get("anchorId")
         sources.append(src)
+
+    # Skjul kilder i mails hvis ønsket
+    if os.getenv("MAIL_HIDE_SOURCES","1") == "1" and output_mode == "mail":
+        sources = []
 
     return {
         "finalAnswer": answer_out,
