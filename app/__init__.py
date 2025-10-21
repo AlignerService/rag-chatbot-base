@@ -83,9 +83,9 @@ app.add_middleware(
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
-# ========== BEGIN HOTFIX: SQLite + thread helpers (robust) ==========
+# ========== BEGIN HOTFIX: SQLite + thread helpers (robust, /tmp-kompatibel) ==========
 logger = logging.getLogger("rag-app")
-DB_PATH = LOCAL_DB_PATH  # én sandhed
+DB_PATH = LOCAL_DB_PATH  # én sandhed: den sti dine env-vars peger på
 
 # Fallback hvis hydrator ikke findes i dette deploy
 async def _hydrate_thread_from_zoho(ticket_id: str) -> int:
@@ -116,40 +116,35 @@ async def _first_existing_col(conn, table: str, candidates: list[str]) -> str | 
     return None
 
 def _coalesce_cols(cols: list[str]) -> str:
-    # Byg COALESCE-kæde med TRIM
+    if not cols:
+        return "''"
     parts = [f"TRIM({c})" for c in cols]
-    return "COALESCE(" + ", ".join(parts + ["''])"]) if parts else "''"
+    # COALESCE(TRIM(c1), TRIM(c2), ..., '')
+    return "COALESCE(" + ", ".join(parts + ["''"]) + ")"
 
 async def _resolve_messages_mapping(conn) -> dict:
-    """
-    Finder kolonnenavne i 'messages' uanset schema-varianter og
-    returnerer et map der kan bruges i SELECT.
-    """
     mapping = {}
     table = "messages"
     if not await _table_has(conn, table):
-        # Ingen messages-tabel. Vi kan ikke gøre mere pænt.
         return {"table": None}
 
-    # Kandidatlister pr. felt
     mapping["table"] = table
-    mapping["ticket"]    = await _first_existing_col(conn, table, ["ticketId","ticket_id","tid","ticket"])
-    mapping["message_id"]= await _first_existing_col(conn, table, ["message_id","msg_id","id"])
-    mapping["subject"]   = await _first_existing_col(conn, table, ["subject","title","emne"])
-    mapping["direction"] = await _first_existing_col(conn, table, ["direction","dir","type"])
-    mapping["created"]   = await _first_existing_col(conn, table, ["createdAt","created_at","createdTime","timestamp","date","time","created"])
-    # Tekstfelter i prioriteret rækkefølge
-    text_candidates = ["body_clean","plainText","plaintext","text","content","body","message","msg"]
+    mapping["ticket"]     = await _first_existing_col(conn, table, ["ticketId","ticket_id","tid","ticket"])
+    mapping["message_id"] = await _first_existing_col(conn, table, ["message_id","msg_id","id"])
+    mapping["subject"]    = await _first_existing_col(conn, table, ["subject","title","emne"])
+    mapping["direction"]  = await _first_existing_col(conn, table, ["direction","dir","type"])
+    mapping["created"]    = await _first_existing_col(conn, table, ["createdAt","created_at","createdTime","timestamp","date","time","created"])
+
+    # tekstkolonner i prioritet
+    candidates = ["body_clean","plainText","plaintext","text","content","body","message","msg"]
     async with conn.execute(f"PRAGMA table_info('{table}')") as cur:
         cols = [r[1] async for r in cur]
-    mapping["text_cols"] = [c for c in text_candidates if c in cols]
-
+    mapping["text_cols"] = [c for c in candidates if c in cols]
     return mapping
 
 def _where_direction_inbound(direction_col: str | None) -> str:
     if not direction_col:
         return "1=1"
-    # Normaliseret inbound: kolonnen kan være 'in','inbound','received'
     return f"LOWER(TRIM({direction_col})) IN ('in','inbound','received')"
 
 async def _fetch_latest_inbound_from_sqlite(ticket_id: str) -> dict | None:
@@ -157,37 +152,35 @@ async def _fetch_latest_inbound_from_sqlite(ticket_id: str) -> dict | None:
         return None
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        mapping = await _resolve_messages_mapping(db)
-        if not mapping.get("table"):
+        mp = await _resolve_messages_mapping(db)
+        if not mp.get("table"):
             logger.info("Ingen 'messages' tabel i SQLite – kan ikke hente inbound.")
             return None
 
-        t = mapping["table"]
-        ticket_col = mapping["ticket"]
-        direction_col = mapping["direction"]
-        created_col = mapping["created"]
-        msg_id_col  = mapping["message_id"]
-        subj_col    = mapping["subject"]
-        text_cols   = mapping["text_cols"] or []
+        t = mp["table"]
+        ticket_col = mp["ticket"]
+        direction_col = mp["direction"]
+        created_col = mp["created"]
+        msg_id_col  = mp["message_id"]
+        subj_col    = mp["subject"]
+        text_cols   = mp["text_cols"] or []
 
         if not ticket_col or not text_cols:
             logger.info("Schema mangler ticket/text kolonner – kan ikke hente inbound.")
             return None
 
         text_expr = _coalesce_cols(text_cols)
-
         order_by = f"ORDER BY {created_col} DESC" if created_col else "ORDER BY rowid DESC"
-        inbound_where = _where_direction_inbound(direction_col)
 
         sql = f"""
             SELECT
                 {msg_id_col or 'NULL'} AS message_id,
-                {subj_col or "''"} AS subject,
-                {text_expr} AS body_any,
+                {subj_col or "''"}   AS subject,
+                {text_expr}          AS body_any,
                 {created_col or 'NULL'} AS created_at
             FROM {t}
             WHERE {ticket_col} = ?
-              AND {inbound_where}
+              AND {_where_direction_inbound(direction_col)}
               AND COALESCE(TRIM({text_cols[0]}), '') <> ''
             {order_by}
             LIMIT 1
@@ -210,17 +203,17 @@ async def _fetch_recent_thread_rows(ticket_id: str, limit: int = 12) -> list[dic
         return []
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        mapping = await _resolve_messages_mapping(db)
-        if not mapping.get("table"):
+        mp = await _resolve_messages_mapping(db)
+        if not mp.get("table"):
             return []
 
-        t = mapping["table"]
-        ticket_col = mapping["ticket"]
-        direction_col = mapping["direction"]
-        created_col = mapping["created"]
-        msg_id_col  = mapping["message_id"]
-        subj_col    = mapping["subject"]
-        text_cols   = mapping["text_cols"] or []
+        t = mp["table"]
+        ticket_col = mp["ticket"]
+        direction_col = mp["direction"]
+        created_col = mp["created"]
+        msg_id_col  = mp["message_id"]
+        subj_col    = mp["subject"]
+        text_cols   = mp["text_cols"] or []
 
         if not ticket_col or not text_cols:
             return []
@@ -231,8 +224,8 @@ async def _fetch_recent_thread_rows(ticket_id: str, limit: int = 12) -> list[dic
         sql = f"""
             SELECT
                 {msg_id_col or 'NULL'} AS message_id,
-                {subj_col or "''"} AS subject,
-                {text_expr} AS body_any,
+                {subj_col or "''"}   AS subject,
+                {text_expr}          AS body_any,
                 {direction_col or "''"} AS direction,
                 {created_col or 'NULL'} AS created_at
             FROM {t}
@@ -276,7 +269,6 @@ def _inject_greeting(mail_text: str, customer_name: str, lang: str = "da") -> st
     greeting = f"Hej {name},\n\n" if lang == "da" else f"Hi {name},\n\n"
     return greeting + mail_text
 
-# Sanity endpoints
 @app.get("/healthz/sqlite")
 async def healthz_sqlite():
     try:
@@ -1482,41 +1474,35 @@ async def api_answer(request: Request):
     subject = (body.get("subject") or "").strip() if isinstance(body, dict) else ""
     customer_name_hint = (body.get("contactName") or body.get("customerName") or "").strip()
 
-    # 2) Extract Zoho-style IDs first (preferred flow)
+        # 2) Extract Zoho-style IDs first (preferred flow)
     user_text = ""
-    ticket_id: Optional[str] = None
-    contact_id: Optional[str] = None
+    ticket_id = None
+    contact_id = None
 
     if isinstance(body, dict):
         if "ticketId" in body and "question" in body:
             ticket_id = str(body.get("ticketId") or "").strip()
             contact_id = str(body.get("contactId") or "").strip() if body.get("contactId") else None
+
+            # 1) prøv direkte fra SQLite
             txt = await sqlite_latest_thread_plaintext(ticket_id, contact_id)
             if txt:
                 user_text = txt
                 logger.info("Zoho ID-only: pulled latest thread from SQLite.")
             else:
-                # Hydrate fra Zoho og prøv igen før vi falder tilbage til 'question'
+                # 2) hydrér (no-op hvis hydrator ikke findes), prøv igen
                 logger.info("SQLite tom for ticket %s – prøver Zoho hydrate...", ticket_id)
-                try:
-                    n = await _hydrate_thread_from_zoho(ticket_id)
-                except Exception:
-                    n = 0
-                    logger.exception("Hydrate kald fejlede")
+                n = await _hydrate_thread_from_zoho(ticket_id)
                 logger.info("Zoho hydrate indlæste %s beskeder", n)
                 latest_after = await _fetch_latest_inbound_from_sqlite(ticket_id)
-
                 if latest_after:
                     user_text = (latest_after.get("body_clean") or latest_after.get("body") or "").strip()
-                    # Brug afsendernavn fra seneste inbound som hilsen-hint, hvis vi ikke har andet
-                    if not customer_name_hint:
-                        customer_name_hint = (latest_after.get("sender_name") or "").strip()
-                    logger.info("Pulled inbound after hydrate – bruger kundens mailtekst.")
+                    logger.info("Pulled inbound efter hydrate – bruger kundens mailtekst.")
                 else:
                     user_text = str(body.get("question") or "").strip()
                     logger.warning("Ingen inbound efter hydrate – falder tilbage til 'question' feltet.")
 
-        # Sekundære felter hvis ovenstående ikke gav noget
+        # Fallbacks hvis ovenstående ikke gav noget
         if not user_text:
             for key_guess in ["plainText", "text", "message", "content", "body", "question"]:
                 if key_guess in body and isinstance(body[key_guess], str) and body[key_guess].strip():
@@ -1535,13 +1521,22 @@ async def api_answer(request: Request):
 
     logger.info(f"user_text(sample 300): {user_text[:300]}")
 
-    # KORTSLUT "boilerplate"/tomme henvendelser fra Zoho før vi rammer LLM
+    # Kortslut boilerplate
     is_boiler = (
         bool(re.search(r"please provide the best ai[- ]generated reply", (user_text or ""), re.I))
         or len((user_text or "").strip()) < 15
     )
+
     if is_boiler:
-        answer = (
+        customer_name = ""
+        # giv mulighed for navn fra payload
+        for k in ("customerName","contactName","name"):
+            if isinstance(body, dict) and isinstance(body.get(k), str) and body.get(k).strip():
+                customer_name = body[k].strip()
+                break
+
+        # Pæn kvitteringsmail i ren tekst (dansk)
+        base = (
             "Subject: Tak for din besked\n\n"
             "Hej,\n\n"
             "Tak for din besked – vi har registreret den og går i gang. "
@@ -1550,8 +1545,8 @@ async def api_answer(request: Request):
             "Venlig hilsen\n"
             "AlignerService Team"
         )
-        # Navnehilsen hvis vi har et navn og mailen ikke allerede starter med Hej/Kære
-        answer = _inject_greeting(answer, customer_name_hint, "da")
+        answer = _inject_greeting(base, customer_name, "da") if customer_name else base
+
         return {
             "finalAnswer": answer,
             "finalAnswerMarkdown": answer,
