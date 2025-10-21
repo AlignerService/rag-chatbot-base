@@ -83,6 +83,105 @@ app.add_middleware(
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
+# ========== BEGIN HOTFIX: SQLite + thread helpers ==========
+import os, aiosqlite, datetime, logging
+logger = logging.getLogger("rag-app")
+
+DB_PATH = os.getenv("RAG_SQLITE_PATH", "/Users/macpro/Dropbox/AlignerService/RAG:Database:aktiv/rag.sqlite3")
+
+async def _fetch_latest_inbound_from_sqlite(ticket_id: str) -> dict | None:
+    q = """
+    SELECT message_id, subject, body_clean, body, sender_name, created_at
+    FROM messages
+    WHERE ticket_id = ? AND direction = 'inbound'
+    ORDER BY created_at DESC
+    LIMIT 1
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(q, (ticket_id,)) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+async def _fetch_recent_thread_rows(ticket_id: str, limit: int = 12) -> list[dict]:
+    q = """
+    SELECT message_id, subject, body_clean, body, direction, created_at
+    FROM messages
+    WHERE ticket_id = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(q, (ticket_id, limit)) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+def _build_context_from_rows(rows: list[dict]) -> list[dict]:
+    ctx = []
+    for r in rows[:6]:
+        ctx.append({
+            "id": r.get("message_id"),
+            "title": r.get("subject") or "Ticket message",
+            "url": None,
+            "meta": {"created_at": r.get("created_at"), "direction": r.get("direction")},
+            "text": (r.get("body_clean") or r.get("body") or "").strip()
+        })
+    return ctx
+
+async def _hydrate_thread_from_zoho(ticket_id: str) -> int:
+    """
+    Kald din eksisterende hydrering fra Zoho og persistér til SQLite.
+    Hvis du allerede har zoho_fetch_and_persist_thread(ticket_id), så brug den.
+    Returnér antal indlæste beskeder.
+    """
+    try:
+        n = await zoho_fetch_and_persist_thread(ticket_id)  # eksisterende helper i dit repo
+        return n or 0
+    except Exception as e:
+        logger.exception("Zoho hydrate failed for %s", ticket_id)
+        return 0
+
+def _inject_greeting(mail_text: str, customer_name: str, lang: str = "da") -> str:
+    name = (customer_name or "").strip()
+    if not name:
+        return mail_text
+    lower = mail_text.lower().lstrip()
+    if lower.startswith("hej ") or lower.startswith("kære ") or lower.startswith("dear "):
+        return mail_text
+    greeting = f"Hej {name},\n\n" if lang == "da" else f"Hi {name},\n\n"
+    return greeting + mail_text
+
+# Små sanity endpoints, så vi kan bevise at Render må skrive/læse
+@app.get("/healthz/sqlite")
+async def healthz_sqlite():
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("PRAGMA journal_mode=WAL;")
+            async with db.execute("SELECT 1") as cur:
+                await cur.fetchone()
+        return {"ok": True, "db_path": DB_PATH}
+    except Exception as e:
+        return {"ok": False, "db_path": DB_PATH, "error": str(e)}
+
+@app.post("/debug/sqlite-write-read")
+async def debug_sqlite_write_read():
+    now = datetime.datetime.utcnow().isoformat()+"Z"
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""CREATE TABLE IF NOT EXISTS messages_debug(
+                id INTEGER PRIMARY KEY,
+                created_at TEXT,
+                note TEXT
+            )""")
+            await db.execute("INSERT INTO messages_debug(created_at, note) VALUES(?, ?)", (now, "ping"))
+            await db.commit()
+            async with db.execute("SELECT created_at, note FROM messages_debug ORDER BY id DESC LIMIT 5") as cur:
+                rows = await cur.fetchall()
+        return {"ok": True, "wrote": now, "recent": [tuple(r) for r in rows]}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "db_path": DB_PATH}
+# ========== END HOTFIX ==========
+
 # =========================
 # Security
 # =========================
