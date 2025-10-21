@@ -633,28 +633,6 @@ async def sqlite_style_snippets(to_email:str,n:int=4,min_len:int=120)->List[str]
         logger.info(f"sqlite_style_snippets: {e}")
         return []
 
-# === Debug endpoints ===
-@app.get("/debug/sqlite/info")
-async def debug_sqlite_info():
-    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-        db.row_factory=aiosqlite.Row
-        async with db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name") as cur:
-            return {"tables":[r["name"] async for r in cur]}
-
-@app.get("/debug/sqlite/columns")
-async def debug_sqlite_columns(table:str):
-    cols=[]
-    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-        db.row_factory=aiosqlite.Row
-        async with db.execute(f"PRAGMA table_info('{table}')") as cur:
-            async for r in cur: cols.append({"name":r["name"],"type":r["type"]})
-    return {"table":table,"columns":cols}
-
-@app.get("/debug/sqlite/find")
-async def debug_sqlite_find(ticketId:str,contactId:Optional[str]=None):
-    txt=await sqlite_latest_thread_plaintext(ticketId,contactId)
-    return {"ticketId":ticketId,"found":bool(txt),"sample":txt[:300] if txt else ""}
-
 # =========================
 # Text helpers
 # =========================
