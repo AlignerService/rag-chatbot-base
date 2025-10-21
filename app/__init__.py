@@ -1370,8 +1370,18 @@ async def api_answer(request: Request):
                 user_text = txt
                 logger.info("Zoho ID-only: pulled latest thread from SQLite.")
             else:
-                user_text = str(body.get("question") or "").strip()
-                logger.info("Zoho ID-only: SQLite empty; using 'question' field.")
+    logger.info("SQLite tom for ticket %s – prøver Zoho hydrate...", ticket_id)
+    n = await _hydrate_thread_from_zoho(ticket_id)
+    logger.info("Zoho hydrate indlæste %s beskeder", n)
+    latest_after = await _fetch_latest_inbound_from_sqlite(ticket_id)
+
+    if latest_after:
+        user_text = (latest_after.get("body_clean") or latest_after.get("body") or "").strip()
+        logger.info("Pulled inbound after hydrate – bruger kundens mailtekst.")
+    else:
+        user_text = str(body.get("question") or "").strip()
+        logger.warning("Ingen inbound efter hydrate – falder tilbage til 'question' feltet.")
+
         if not user_text:
             for key_guess in ["plainText", "text", "message", "content", "body", "question"]:
                 if key_guess in body and isinstance(body[key_guess], str) and body[key_guess].strip():
