@@ -529,6 +529,17 @@ async def init_db():
         logger.info(f"history load skipped: {e}")
 
 # =========================
+# Text helpers (used by SQLite functions)
+# =========================
+def _strip_html(text: str) -> str:
+    if not text:
+        return ""
+    import re
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+    
+# =========================
 # SQLite helpers (robust lookup på tværs af tabeller/kolonner)
 # =========================
 async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[str] = None) -> str:
@@ -643,48 +654,6 @@ async def debug_sqlite_columns(table:str):
 async def debug_sqlite_find(ticketId:str,contactId:Optional[str]=None):
     txt=await sqlite_latest_thread_plaintext(ticketId,contactId)
     return {"ticketId":ticketId,"found":bool(txt),"sample":txt[:300] if txt else ""}
-
-# =========================
-# Debug endpoints (sæt disse i bunden sammen med dine andre routes)
-# =========================
-@app.get("/debug/sqlite/info")
-async def debug_sqlite_info():
-    if not _SQLITE_OK:
-        return {"sqlite": False, "tables": []}
-    tables = []
-    try:
-        async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name") as cur:
-                async for r in cur:
-                    name = r["name"]
-                    try:
-                        async with db.execute(f"SELECT COUNT(*) AS n FROM '{name}'") as c2:
-                            nrow = (await c2.fetchone())["n"]
-                    except Exception:
-                        nrow = None
-                    tables.append({"name": name, "rows": nrow})
-    except Exception as e:
-        logger.exception(f"/debug/sqlite/info failed: {e}")
-    return {"sqlite": True, "tables": tables}
-
-@app.get("/debug/sqlite/columns")
-async def debug_sqlite_columns(table: str):
-    cols = []
-    try:
-        async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(f"PRAGMA table_info('{table}')") as cur:
-                async for r in cur:
-                    cols.append({"name": r["name"], "type": r["type"]})
-    except Exception as e:
-        logger.exception(f"/debug/sqlite/columns failed: {e}")
-    return {"table": table, "columns": cols}
-
-@app.get("/debug/sqlite/find")
-async def debug_sqlite_find(ticketId: str, contactId: Optional[str] = None):
-    txt = await sqlite_latest_thread_plaintext(ticketId, contactId)
-    return {"ticketId": ticketId, "contactId": contactId, "found": bool(txt), "sample": (txt[:300] if txt else "")}
 
 # =========================
 # Text helpers
