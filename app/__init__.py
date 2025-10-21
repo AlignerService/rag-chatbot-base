@@ -1421,7 +1421,7 @@ async def api_answer(request: Request):
     # 5) Failsafe if no context at all
     if not combined_chunks:
         # Fallback mail pr. intent
-        fb = customer_mail_boilerplate(lang, intent) if intent in ("status_request","admin","clinical_support") else ""
+        fb = fallback_mail(lang, intent) if intent in ("status_request","admin","clinical_support") else ""
         answer = fb or (
             "Grundprotokol når kontekst mangler:\n"
             "1) Screening/diagnose → 2) Plan (staging, IPR, attachments) → 3) Start → 4) Kontroller/tracking → 5) Refinement → 6) Retention.\n"
@@ -1456,7 +1456,7 @@ async def api_answer(request: Request):
 
     # Tilføj kort kundeboilerplate for status/admin
     if intent in ("status_request", "admin"):
-        style += "\n" + customer_mail_boilerplate(lang, intent)
+        style += "\n" + customer_mail_guidance(lang, intent)
 
     evidence_policy = (
         "EVIDENCE POLICY\n"
