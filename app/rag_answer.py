@@ -1,6 +1,7 @@
 # app/rag_answer.py
 import os
 import json
+import re
 import numpy as np
 import faiss
 import tiktoken
@@ -22,7 +23,7 @@ RAG_BEARER_TOKEN = os.getenv("RAG_BEARER_TOKEN", "")
 def _require_token(credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     """
     Hvis RAG_BEARER_TOKEN er sat, kræver vi en Bearer <token> header.
-    Hvis ikke, lader vi det passere. Simpelt, uden drama.
+    Hvis ikke, lader vi det passere.
     """
     expected = (RAG_BEARER_TOKEN or "").strip()
     if not expected:
@@ -94,7 +95,6 @@ def get_rag_answer(question: str, top_k: int = 5) -> str:
 
 # ---------------------------
 # 2) Små hjælper-funktioner
-#    (helt ufarlige “hooks”)
 # ---------------------------
 def _detect_language(text: str) -> str:
     if not text:
@@ -110,8 +110,8 @@ def _detect_language(text: str) -> str:
 
 def _extract_brand_and_case(subject: str, body: str):
     """
-    Ultra-simple version for nu. Finder bare et muligt sags-/case-id (tal på 6-10 cifre)
-    og brand-navn hvis ordet står i teksten. Ingen garanti, men det lynes ikke i luften.
+    Ultra-simple version. Finder et muligt case-id (6-10 cifre)
+    og brand-navn hvis ordet står i teksten.
     """
     blob = f"{subject or ''}\n{body or ''}".lower()
     brand = None
@@ -119,10 +119,79 @@ def _extract_brand_and_case(subject: str, body: str):
         if name in blob:
             brand = name
             break
-    import re
     m = re.search(r"\b\d{6,10}\b", blob)
     case_id = m.group(0) if m else None
     return {"brand": brand, "caseId": case_id}
+
+# --- Autosvar-filter + tråd-udtræk (Zoho) ---
+AUTOREPLY_MARKERS = [
+    "Thank you for your message – we appreciate your trust in AlignerService.",
+    "We’ve received your request, and the team has already begun processing it.",
+    "you'll hear from us as soon as your setup is ready",
+]
+OUR_DOMAIN_HINTS = ["@alignerservice.com"]
+OUR_SENDER_HINTS = ["tps@alignerservice.com", "support@alignerservice.com"]
+
+def _looks_like_autoreply(txt: str) -> bool:
+    t = (txt or "").strip().lower()
+    if not t:
+        return False
+    return any(m.lower() in t for m in AUTOREPLY_MARKERS)
+
+def _is_our_sender(val: str) -> bool:
+    v = (val or "").strip().lower()
+    if not v:
+        return False
+    if v in (s.lower() for s in OUR_SENDER_HINTS):
+        return True
+    return any(d in v for d in (h.lower() for h in OUR_DOMAIN_HINTS))
+
+def _pick_inbound_from_payload(body: dict) -> str:
+    """
+    Find seneste INBOUND kundebesked i typiske Zoho-felter.
+    Ignorer vores egne udsendte autosvar.
+    """
+    if not isinstance(body, dict):
+        return ""
+
+    list_keys = ["ticketThreadMessages", "messages", "thread", "comments", "conversation", "items"]
+
+    for lk in list_keys:
+        msgs = body.get(lk)
+        if not isinstance(msgs, list) or not msgs:
+            continue
+
+        # seneste først
+        for m in reversed(msgs):
+            if not isinstance(m, dict):
+                continue
+            txt = None
+            for tk in ["plainText", "plaintext", "text", "content", "body", "message", "message_text"]:
+                if isinstance(m.get(tk), str) and m[tk].strip():
+                    txt = m[tk].strip()
+                    break
+            if not txt:
+                continue
+
+            direction = (m.get("direction") or m.get("dir") or m.get("type") or "").strip().lower()
+            sender = (m.get("from") or m.get("sender") or m.get("author") or "").strip().lower()
+
+            if _is_our_sender(sender):
+                continue
+            if _looks_like_autoreply(txt):
+                continue
+            if direction and direction not in ("in", "inbound", "received", "customer", "incoming"):
+                continue
+
+            return txt  # god inbound-tekst
+
+    # fallback i roden
+    for k in ["customerMessage", "originalMessage", "ticketPlainText", "lastInbound"]:
+        v = body.get(k)
+        if isinstance(v, str) and v.strip() and not _looks_like_autoreply(v):
+            return v.strip()
+
+    return ""
 
 # ---------------------------
 # 3) Selve endpointet
@@ -130,9 +199,9 @@ def _extract_brand_and_case(subject: str, body: str):
 @router.post("/answer", dependencies=[Depends(_require_token)])
 async def api_answer(request: Request):
     """
-    Dette er det, din frontend kalder via fetch('/api/answer').
-    Vi læser body, trækker 'question' (fallback til 'text'/'message'), kører din eksisterende RAG,
-    og returnerer et pænt JSON-svar.
+    Frontend kalder via fetch('/api/answer').
+    Vi læser body, trækker kundens seneste INBOUND-tekst hvis muligt,
+    falder ellers tilbage til 'question'/'text'/... og kører din RAG.
     """
     try:
         body = await request.json()
@@ -141,17 +210,30 @@ async def api_answer(request: Request):
 
     # Læs inputfelter på en venlig måde
     question = ""
-    if isinstance(body, dict):
+
+    # 2A: Prøv først at finde seneste INBOUND fra kunden (Zoho tråd)
+    inbound_txt = _pick_inbound_from_payload(body) if isinstance(body, dict) else ""
+    if inbound_txt:
+        question = inbound_txt
+
+    # 2B: Hvis ikke, brug klassiske felter
+    if not question and isinstance(body, dict):
         for key in ["question", "text", "message", "body", "plainText"]:
             if isinstance(body.get(key), str) and body.get(key).strip():
                 question = body[key].strip()
                 break
 
+    # 2C: Hvis det ligner vores autosvar, forsøg igen at finde inbound
+    if question and _looks_like_autoreply(question):
+        inbound_again = _pick_inbound_from_payload(body) if isinstance(body, dict) else ""
+        if inbound_again:
+            question = inbound_again
+
     if not question:
-        # hvis folk har sendt noget gakket, så ekko det mindste
+        # sidste udvej: ekko hele body
         question = json.dumps(body, ensure_ascii=False)
 
-    # Bonus: træk fromEmail/subject (bruger vi lige nu kun til metadata)
+    # Bonus: metadata til svaret
     from_email = (body.get("fromEmail") or "").strip().lower() if isinstance(body, dict) else ""
     subject = (body.get("subject") or "").strip() if isinstance(body, dict) else ""
     brand_case = _extract_brand_and_case(subject, question)
@@ -161,14 +243,13 @@ async def api_answer(request: Request):
     try:
         answer = get_rag_answer(question)
     except Exception as e:
-        # Hvis noget går i stykker, så sig det rent ud
         raise HTTPException(status_code=500, detail=f"RAG failed: {e}")
 
-    # Returnér i et format som UI’er plejer at kunne bruge
+    # Returnér i et UI-venligt format
     return {
-        "finalAnswer": answer,                  # det du vil vise i UI
-        "finalAnswerMarkdown": answer,          # samme, hvis UI vil vise markdown
-        "finalAnswerPlain": answer,             # plain tekst (du kører i forvejen ret plain)
+        "finalAnswer": answer,
+        "finalAnswerMarkdown": answer,
+        "finalAnswerPlain": answer,
         "language": lang,
         "brandCase": brand_case,
         "fromEmail": from_email,
