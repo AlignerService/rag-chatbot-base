@@ -550,7 +550,7 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
 
-            # Tjek at ticket findes, og at contactId (hvis givet) matcher
+            # Tjek at ticket findes (og evt. at contactId matcher)
             if cid:
                 sql_ticket = "SELECT 1 FROM tickets WHERE ticketId = ? AND contactId = ? LIMIT 1"
                 params_ticket = (tid, cid)
@@ -558,24 +558,26 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
                 sql_ticket = "SELECT 1 FROM tickets WHERE ticketId = ? LIMIT 1"
                 params_ticket = (tid,)
 
-            row = await db.execute_fetchone(sql_ticket, params_ticket)
+            async with db.execute(sql_ticket, params_ticket) as cur:
+                row = await cur.fetchone()
+
             if not row:
-                # Hvis Zoho ikke har lagt ticket’en i tickets-tabellen, prøver vi alligevel at læse messages
                 logger.info(f"Ticket '{tid}' not found in tickets; falling back to messages only.")
 
-            # Træk seneste ikke-tomme plaintext fra messages for denne ticket
+            # Hent seneste ikke-tomme beskedtekst fra messages
             sql_msg = """
                 SELECT plainText
                 FROM messages
                 WHERE ticketId = ?
                   AND COALESCE(TRIM(plainText), '') <> ''
                 ORDER BY
-                    -- createdAt kan indeholde tekst, så sorter fallback på rowid når createdAt ikke ligner ISO
                     CASE WHEN createdAt GLOB '____-__-__*' THEN createdAt ELSE NULL END DESC,
                     rowid DESC
                 LIMIT 1
             """
-            rowm = await db.execute_fetchone(sql_msg, (tid,))
+            async with db.execute(sql_msg, (tid,)) as cur2:
+                rowm = await cur2.fetchone()
+
             if rowm and (rowm["plainText"] or "").strip():
                 return (rowm["plainText"] or "").strip()
 
@@ -1501,3 +1503,15 @@ async def api_answer(request: Request):
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "message": {"content": answer_out, "language": lang}
     }
+
+# --- Legacy shims (for gamle integrationer / Zoho misrouting) ---
+@app.post("/answer", dependencies=[Depends(require_rag_token)])
+async def legacy_answer(request: Request):
+    # Viderekald den rigtige handler
+    return await api_answer(request)
+
+@app.post("/update_ticket")
+async def noop_update_ticket():
+    # Hvis Zoho prøver at ramme noget der ikke findes, så svar pænt 200
+    return {"status": "noop"}
+
