@@ -84,10 +84,11 @@ app.add_middleware(
 )
 
 # ========== BEGIN HOTFIX: SQLite + thread helpers ==========
-import os, aiosqlite, datetime, logging
+# Brug eksisterende imports (logging, aiosqlite, datetime) fra toppen af filen.
 logger = logging.getLogger("rag-app")
 
-DB_PATH = os.getenv("RAG_SQLITE_PATH", "/Users/macpro/Dropbox/AlignerService/RAG:Database:aktiv/rag.sqlite3")
+# Én sandhed for DB-stien: brug den samme som resten af app'en
+DB_PATH = LOCAL_DB_PATH
 
 async def _fetch_latest_inbound_from_sqlite(ticket_id: str) -> dict | None:
     q = """
@@ -137,7 +138,7 @@ async def _hydrate_thread_from_zoho(ticket_id: str) -> int:
     try:
         n = await zoho_fetch_and_persist_thread(ticket_id)  # eksisterende helper i dit repo
         return n or 0
-    except Exception as e:
+    except Exception:
         logger.exception("Zoho hydrate failed for %s", ticket_id)
         return 0
 
@@ -165,17 +166,25 @@ async def healthz_sqlite():
 
 @app.post("/debug/sqlite-write-read")
 async def debug_sqlite_write_read():
-    now = datetime.datetime.utcnow().isoformat()+"Z"
+    # Brug datetime fra toppen: from datetime import datetime
+    now = datetime.utcnow().isoformat() + "Z"
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("""CREATE TABLE IF NOT EXISTS messages_debug(
-                id INTEGER PRIMARY KEY,
-                created_at TEXT,
-                note TEXT
-            )""")
-            await db.execute("INSERT INTO messages_debug(created_at, note) VALUES(?, ?)", (now, "ping"))
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS messages_debug(
+                    id INTEGER PRIMARY KEY,
+                    created_at TEXT,
+                    note TEXT
+                )
+            """)
+            await db.execute(
+                "INSERT INTO messages_debug(created_at, note) VALUES(?, ?)",
+                (now, "ping"),
+            )
             await db.commit()
-            async with db.execute("SELECT created_at, note FROM messages_debug ORDER BY id DESC LIMIT 5") as cur:
+            async with db.execute(
+                "SELECT created_at, note FROM messages_debug ORDER BY id DESC LIMIT 5"
+            ) as cur:
                 rows = await cur.fetchall()
         return {"ok": True, "wrote": now, "recent": [tuple(r) for r in rows]}
     except Exception as e:
