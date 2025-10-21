@@ -606,31 +606,80 @@ async def sqlite_load_threads_as_chunks(limit:int=2000)->List[Dict[str,Any]]:
     except Exception as e: logger.info(f"sqlite_load_threads_as_chunks: {e}")
     return out
 
-# === Udgående mails til tone ===
-async def sqlite_style_snippets(to_email:str,n:int=4,min_len:int=120)->List[str]:
-    if not _SQLITE_OK or not to_email: return []
-    want=to_email.strip().lower(); out=[]
+# === Udgående mails til tone (bruger messages + tickets + contacts) ===
+async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -> List[str]:
+    """
+    Finder korte uddrag fra nylige UD-GÅENDE beskeder til samme kontakt baseret på email.
+    Vi har ikke 'mail_outbox', så vi bruger:
+      contacts.email -> tickets.contactId -> messages (direction='out')
+    Fallback: hvis ingen match på email, returnér de seneste udgående beskeder generelt.
+    """
+    if not _SQLITE_OK or not to_email:
+        return []
+
+    want = (to_email or "").strip().lower()
+    out: List[str] = []
+
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-            db.row_factory=aiosqlite.Row
-            sql="""SELECT plainText FROM mail_outbox
-                   WHERE LOWER(TRIM(to_email))=? AND COALESCE(TRIM(plainText),'')<>''
-                   ORDER BY createdAt DESC LIMIT ?"""
-            async with db.execute(sql,(want,n*3)) as cur:
+            db.row_factory = aiosqlite.Row
+
+            # 1) Forsøg: find contactId via email og træk udgående beskeder fra alle vedkommendes tickets
+            sql_by_email = """
+                SELECT m.plainText AS txt
+                FROM contacts c
+                JOIN tickets t ON t.contactId = c.contactId
+                JOIN messages m ON m.ticketId = t.ticketId
+                WHERE LOWER(TRIM(c.email)) = ?
+                  AND COALESCE(TRIM(m.plainText),'') <> ''
+                  AND LOWER(TRIM(m.direction)) IN ('out','outbound','sent')
+                ORDER BY
+                    CASE WHEN m.createdAt GLOB '____-__-__*' THEN m.createdAt ELSE NULL END DESC,
+                    m.rowid DESC
+                LIMIT ?
+            """
+            async with db.execute(sql_by_email, (want, max(n*5, n))) as cur:
                 async for r in cur:
-                    t=_strip_html((r["plainText"] or "").strip())
-                    if len(t)>=min_len:
+                    t = _strip_html((r["txt"] or "").strip())
+                    if len(t) >= min_len:
                         out.append(t[:600])
-                        if len(out)>=n: break
-        uniq=[]; seen=set()
+                        if len(out) >= n:
+                            break
+
+            # 2) Fallback: hvis intet via email, tag generelt de seneste udgående beskeder
+            if len(out) < n:
+                sql_any_out = """
+                    SELECT m.plainText AS txt
+                    FROM messages m
+                    WHERE COALESCE(TRIM(m.plainText),'') <> ''
+                      AND LOWER(TRIM(m.direction)) IN ('out','outbound','sent')
+                    ORDER BY
+                        CASE WHEN m.createdAt GLOB '____-__-__*' THEN m.createdAt ELSE NULL END DESC,
+                        m.rowid DESC
+                    LIMIT ?
+                """
+                async with db.execute(sql_any_out, (max(n*5, n),)) as cur:
+                    async for r in cur:
+                        t = _strip_html((r["txt"] or "").strip())
+                        if len(t) >= min_len:
+                            out.append(t[:600])
+                            if len(out) >= n:
+                                break
+
+        # dedupliker på første ~120 tegn
+        uniq: List[str] = []
+        seen: set = set()
         for s in out:
-            k=s[:120].lower()
+            k = s[:120].lower()
             if k not in seen:
-                uniq.append(s); seen.add(k)
-            if len(uniq)>=n: break
+                uniq.append(s)
+                seen.add(k)
+            if len(uniq) >= n:
+                break
         return uniq
+
     except Exception as e:
-        logger.info(f"sqlite_style_snippets: {e}")
+        logger.info(f"sqlite_style_snippets (messages-based): {e}")
         return []
 
 # =========================
