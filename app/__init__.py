@@ -1290,6 +1290,34 @@ async def api_answer(request: Request):
         user_text = json.dumps(body, ensure_ascii=False)
 
     logger.info(f"user_text(sample 300): {user_text[:300]}")
+    # KORTSLUT "boilerplate"/tomme henvendelser fra Zoho før vi rammer LLM
+    is_boiler = (
+        bool(re.search(r"please provide the best ai[- ]generated reply", (user_text or ""), re.I))
+        or len((user_text or "").strip()) < 15
+    )
+
+    if is_boiler:
+        # Pæn kvitteringsmail i ren tekst (dansk)
+        answer = (
+            "Subject: Tak for din besked\n\n"
+            "Hej,\n\n"
+            "Tak for din besked – vi har registreret den og går i gang. "
+            "Du hører fra os, så snart der er et oplæg klar til godkendelse, "
+            "eller hvis vi mangler noget for at komme videre.\n\n"
+            "Venlig hilsen\n"
+            "AlignerService Team"
+        )
+        return {
+            "finalAnswer": answer,
+            "finalAnswerMarkdown": answer,
+            "finalAnswerPlain": md_to_plain(answer),
+            "language": "da",
+            "role": "kliniker",
+            "sources": [],
+            "ticketId": ticket_id,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "message": {"content": answer, "language": "da"}
+        }
 
     # 3) Language + Role + Intent + Prompt
     lang = detect_language(user_text)
