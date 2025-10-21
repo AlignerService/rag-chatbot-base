@@ -532,79 +532,54 @@ async def init_db():
 # SQLite helpers (Zoho ticket text)
 # =========================
 async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[str] = None) -> str:
+    """
+    Returnerer SENESTE ikke-tomme besked-plaintext for en given ticket.
+    Matcher direkte på tickets.ticketId -> messages.ticketId.
+    Hvis contact_id er angivet, kræver vi også tickets.contactId = contact_id.
+    """
     if not _SQLITE_OK:
         logger.warning("SQLite not available")
         return ""
 
-    tid = str(ticket_id).strip()
-    cid = str(contact_id).strip() if contact_id else None
+    tid = (ticket_id or "").strip()
+    cid = (contact_id or "").strip() if contact_id else None
     if not tid:
         return ""
-
-    candidates_text = ["plainText", "plaintext", "text", "content", "body", "message", "message_text"]
-    candidates_ticket = ["ticketId", "ticket_id", "tid", "ticket"]
-    candidates_contact = ["contactId", "contact_id", "cid", "contact"]
-    candidates_time = ["createdTime", "createdAt", "created_at", "date", "timestamp", "time", "updated_at"]
 
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            tables = []
-            async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
-                async for row in cur:
-                    tables.append(row["name"])
 
-            best_text = ""
-            best_time = None
+            # Tjek at ticket findes, og at contactId (hvis givet) matcher
+            if cid:
+                sql_ticket = "SELECT 1 FROM tickets WHERE ticketId = ? AND contactId = ? LIMIT 1"
+                params_ticket = (tid, cid)
+            else:
+                sql_ticket = "SELECT 1 FROM tickets WHERE ticketId = ? LIMIT 1"
+                params_ticket = (tid,)
 
-            for table in tables:
-                async with db.execute(f"PRAGMA table_info('{table}')") as cur:
-                    cols = [dict(row) async for row in cur]
-                col_names = [c["name"] for c in cols]
+            row = await db.execute_fetchone(sql_ticket, params_ticket)
+            if not row:
+                # Hvis Zoho ikke har lagt ticket’en i tickets-tabellen, prøver vi alligevel at læse messages
+                logger.info(f"Ticket '{tid}' not found in tickets; falling back to messages only.")
 
-                text_cols = [c for c in candidates_text if c in col_names]
-                ticket_cols = [c for c in candidates_ticket if c in col_names]
-                contact_cols = [c for c in candidates_contact if c in col_names]
-                time_cols = [c for c in candidates_time if c in col_names]
+            # Træk seneste ikke-tomme plaintext fra messages for denne ticket
+            sql_msg = """
+                SELECT plainText
+                FROM messages
+                WHERE ticketId = ?
+                  AND COALESCE(TRIM(plainText), '') <> ''
+                ORDER BY
+                    -- createdAt kan indeholde tekst, så sorter fallback på rowid når createdAt ikke ligner ISO
+                    CASE WHEN createdAt GLOB '____-__-__*' THEN createdAt ELSE NULL END DESC,
+                    rowid DESC
+                LIMIT 1
+            """
+            rowm = await db.execute_fetchone(sql_msg, (tid,))
+            if rowm and (rowm["plainText"] or "").strip():
+                return (rowm["plainText"] or "").strip()
 
-                if not text_cols or not ticket_cols:
-                    continue
-
-                tcol = text_cols[0]
-                kcol = ticket_cols[0]
-                ccol = contact_cols[0] if contact_cols else None
-                timecol = time_cols[0] if time_cols else None
-
-                where = f"{kcol} = ?"
-                params: List[Any] = [tid]
-                if cid and ccol:
-                    where += f" AND {ccol} = ?"
-                    params.append(cid)
-
-                order_clause = f"ORDER BY {timecol} DESC" if timecol else "ORDER BY rowid DESC"
-                sql = f"SELECT {tcol} AS txt, {timecol if timecol else 'NULL'} AS t FROM '{table}' WHERE {where} {order_clause} LIMIT 1"
-
-                try:
-                    async with db.execute(sql, params) as cur:
-                        row = await cur.fetchone()
-                        if row:
-                            txt = (row["txt"] or "").strip()
-                            tval = row["t"]
-                            if txt:
-                                if best_time is None:
-                                    best_text, best_time = txt, tval
-                                else:
-                                    if tval and (not best_time or str(tval) > str(best_time)):
-                                        best_text, best_time = txt, tval
-                                    elif not best_text:
-                                        best_text = txt
-                                        best_time = tval
-                                logger.info(f"SQLite hit: table={table}, tcol={tcol}, kcol={kcol}, ccol={ccol}, time={timecol}")
-                except Exception as e:
-                    logger.info(f"SQLite query failed on {table}: {e}")
-                    continue
-
-            return best_text or ""
+            return ""
     except Exception as e:
         logger.exception(f"SQLite latest-thread lookup failed: {e}")
         return ""
@@ -612,105 +587,97 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
 # === NYT: Indlæs flere historiktråde som chunks ===
 async def sqlite_load_threads_as_chunks(limit:int=2000) -> List[Dict[str,Any]]:
     """
-    Læser 'tekstlige' kolonner på tværs af tabeller og laver generiske chunks.
-    Returnerer items i form: {"text":..., "meta": {...}} der kan føjes til _METADATA.
+    Læser nylige beskeder fra messages og pakker dem som generiske RAG-chunks.
+    Knytter metadata fra tickets (contactId, subject) og contacts (email) når muligt.
+    Returnerer: [{"text": <plainText>, "meta": {...}}, ...]
     """
     if not _SQLITE_OK:
         return []
-    out=[]
+
+    out: List[Dict[str,Any]] = []
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            tables=[]
-            async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
-                async for row in cur: tables.append(row["name"])
-            text_cols = ["plainText","plaintext","text","content","body","message","message_text"]
-            id_cols   = ["ticketId","ticket_id","tid","id"]
-            who_cols  = ["contactId","contact_id","from","sender","author"]
-            time_cols = ["createdTime","createdAt","created_at","date","timestamp","time","updated_at"]
 
-            for table in tables:
-                try:
-                    async with db.execute(f"PRAGMA table_info('{table}')") as cur:
-                        cols=[dict(r) async for r in cur]
-                    cn = {c["name"] for c in cols}
-                    tcol = next((c for c in text_cols if c in cn), None)
-                    if not tcol: 
+            # Vi tager kun ikke-tomme tekster
+            sql = """
+                SELECT
+                    m.plainText AS txt,
+                    m.ticketId  AS ticketId,
+                    m.direction AS direction,
+                    m.author    AS author,
+                    m.author_email AS author_email,
+                    m.createdAt AS createdAt,
+                    t.contactId AS contactId,
+                    t.subject   AS subject,
+                    c.email     AS contact_email
+                FROM messages m
+                LEFT JOIN tickets  t ON t.ticketId = m.ticketId
+                LEFT JOIN contacts c ON c.contactId = t.contactId
+                WHERE COALESCE(TRIM(m.plainText),'') <> ''
+                ORDER BY
+                    CASE WHEN m.createdAt GLOB '____-__-__*' THEN m.createdAt ELSE NULL END DESC,
+                    m.rowid DESC
+                LIMIT ?
+            """
+            async with db.execute(sql, (limit,)) as cur:
+                async for r in cur:
+                    txt = (r["txt"] or "").strip()
+                    if len(txt) < 40:
                         continue
-                    kcol = next((c for c in id_cols if c in cn), None)
-                    wcol = next((c for c in who_cols if c in cn), None)
-                    dcol = next((c for c in time_cols if c in cn), None)
-                    sql = f"SELECT {tcol} AS txt, {kcol if kcol else 'NULL'} AS kid, {wcol if wcol else 'NULL'} AS who, {dcol if dcol else 'NULL'} AS dt FROM '{table}' ORDER BY rowid DESC LIMIT ?"
-                    async with db.execute(sql, (limit,)) as cur:
-                        async for r in cur:
-                            txt=(r["txt"] or "").strip()
-                            if not txt or len(txt)<40: 
-                                continue
-                            meta={"source":"HistoryDB","title":f"{table}",
-                                  "ticketId": r["kid"], "contact": r["who"], "date": r["dt"]}
-                            out.append({"text": txt, "meta": meta})
-                except Exception:
-                    continue
+                    meta = {
+                        "source": "HistoryDB",
+                        "title":  r["subject"] or "message",
+                        "ticketId": r["ticketId"],
+                        "contactId": r["contactId"],
+                        "contact_email": r["contact_email"],
+                        "direction": r["direction"],
+                        "author": r["author"],
+                        "author_email": r["author_email"],
+                        "date": r["createdAt"],
+                    }
+                    out.append({"text": txt, "meta": meta})
+
     except Exception as e:
         logger.info(f"sqlite_load_threads_as_chunks: {e}")
+
     return out
 
 # === Tone-of-voice snippets from SQLite ===
 async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -> List[str]:
-    """Hent korte uddrag fra nylige udgående svar til samme kunde-e-mail. Bruges kun som style seed i prompten."""
+    """
+    Finder korte uddrag fra nylige UD-GÅENDE mails til samme kunde (mail_outbox.to_email).
+    Bruges kun som stil-seed i prompten.
+    """
     if not _SQLITE_OK or not to_email:
         return []
+
     try:
-        to_email = to_email.strip().lower()
+        want = (to_email or "").strip().lower()
         out: List[str] = []
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            tables: List[str] = []
-            async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
-                async for row in cur:
-                    tables.append(row["name"])
-            email_cols = ["to","recipient","toEmail","to_email","email_to","address_to","customer_email"]
-            from_cols  = ["from","sender","fromEmail","from_email","email_from"]
-            dir_cols   = ["direction","dir","type"]
-            text_cols  = ["plainText","plaintext","text","content","body","message","message_text"]
-            time_cols  = ["createdTime","createdAt","created_at","date","timestamp","time","updated_at"]
 
-            for table in tables:
-                try:
-                    async with db.execute(f"PRAGMA table_info('{table}')") as cur:
-                        cols = [dict(r) async for r in cur]
-                    cn = {c["name"] for c in cols}
+            sql = """
+                SELECT plainText
+                FROM mail_outbox
+                WHERE LOWER(TRIM(to_email)) = ?
+                  AND COALESCE(TRIM(plainText),'') <> ''
+                ORDER BY
+                    CASE WHEN createdAt GLOB '____-__-__*' THEN createdAt ELSE NULL END DESC,
+                    rowid DESC
+                LIMIT ?
+            """
+            async with db.execute(sql, (want, max(n*3, n))) as cur:
+                async for r in cur:
+                    t = (r["plainText"] or "").strip()
+                    t = _strip_html(t)
+                    if len(t) >= min_len:
+                        out.append(t[:600])
+                        if len(out) >= n:
+                            break
 
-                    tcol = next((c for c in text_cols if c in cn), None)
-                    if not tcol:
-                        continue
-                    tocol = next((c for c in email_cols if c in cn), None)
-                    dcol  = next((c for c in dir_cols if c in cn), None)
-                    timec = next((c for c in time_cols if c in cn), None)
-
-                    where = []
-                    params: List[Any] = []
-                    if tocol:
-                        where.append(f"LOWER({tocol}) = ?")
-                        params.append(to_email)
-                    if dcol:
-                        where.append(f"LOWER({dcol}) IN ('out','sent','reply','outbound')")
-                    where_clause = ("WHERE " + " AND ".join(where)) if where else ""
-                    order_clause = f"ORDER BY {timec} DESC" if timec else "ORDER BY rowid DESC"
-                    sql = f"SELECT {tcol} AS txt FROM '{table}' {where_clause} {order_clause} LIMIT ?"
-                    params.append(max(n*2, n))
-
-                    async with db.execute(sql, tuple(params)) as cur:
-                        async for r in cur:
-                            t = (r["txt"] or "").strip()
-                            t = _strip_html(t)
-                            if len(t) >= min_len:
-                                out.append(t[:600])
-                            if len(out) >= n:
-                                break
-                except Exception:
-                    continue
-        # dedup
+        # dedup på første ~120 tegn
         uniq: List[str] = []
         seen: set = set()
         for s in out:
@@ -721,6 +688,7 @@ async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -
             if len(uniq) >= n:
                 break
         return uniq
+
     except Exception as e:
         logger.info(f"sqlite_style_snippets: {e}")
         return []
