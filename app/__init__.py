@@ -39,7 +39,7 @@ METADATA_FILE       = os.getenv("METADATA_FILE", "metadata.json")    # fallback 
 # Brug KUN METADATA_FILES nedenfor (kommasepareret/whitespace/semikolon)
 METADATA_FILES_RAW  = os.getenv("METADATA_FILES", "")
 
-LOCAL_DB_PATH      = os.getenv("LOCAL_DB_PATH", "/mnt/data/knowledge.sqlite")
+LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
 
 RAG_BEARER_TOKEN   = os.getenv("RAG_BEARER_TOKEN", "")
 
@@ -364,7 +364,13 @@ def detect_language(text: str) -> str:
         return "fr"
     if sum(1 for w in [" bonjour", " merci", " cabinet", " clinique", " orthodont", " dentiste"] if w in lowered) >= 2:
         return "fr"
+
+    # sv (svensk) – simpel men effektiv heuristik
+    if sum(1 for w in [" hej ", " vänligen", " önskar", " mellanrum", " krona", " regio", "tand ", "godkännande", "setup"] if w in lowered) >= 2:
+        return "sv"
+
     return "en"
+
 
 # =========================
 # Intent detection (simple heuristic)
@@ -1442,9 +1448,11 @@ def fallback_mail(lang: str, intent: str) -> str:
 async def health():
     return {"status": "ok", "qa_loaded": len(_QA_ITEMS), "metadata_loaded": len(_METADATA)}
 
+
 @app.post("/debug-token")
 async def debug_token(request: Request):
     return JSONResponse({"received_authorization": request.headers.get("authorization")})
+
 
 @app.post("/api/answer", dependencies=[Depends(require_rag_token)])
 async def api_answer(request: Request):
@@ -1469,8 +1477,9 @@ async def api_answer(request: Request):
 
     # 2) Extract Zoho-style IDs first (preferred flow)
     user_text = ""
-    ticket_id = None
-    contact_id = None
+    ticket_id: Optional[str] = None
+    contact_id: Optional[str] = None
+    lang: Optional[str] = None  # sæt først når vi har reel kundetekst
 
     if isinstance(body, dict):
         if "ticketId" in body and "question" in body:
@@ -1482,6 +1491,7 @@ async def api_answer(request: Request):
             if txt:
                 user_text = txt
                 logger.info("Zoho ID-only: pulled latest thread from SQLite.")
+                lang = detect_language(user_text)
             else:
                 # 2) hydrér (no-op hvis hydrator ikke findes), prøv igen
                 logger.info("SQLite tom for ticket %s – prøver Zoho hydrate...", ticket_id)
@@ -1491,6 +1501,9 @@ async def api_answer(request: Request):
                 if latest_after:
                     user_text = (latest_after.get("body_clean") or latest_after.get("body") or "").strip()
                     logger.info("Pulled inbound efter hydrate – bruger kundens mailtekst.")
+                    if not subject:
+                        subject = (latest_after.get("subject") or subject or "").strip()
+                    lang = detect_language(user_text)
                 else:
                     user_text = str(body.get("question") or "").strip()
                     logger.warning("Ingen inbound efter hydrate – falder tilbage til 'question' feltet.")
@@ -1553,7 +1566,9 @@ async def api_answer(request: Request):
         }
 
     # 3) Language + Role + Intent + Prompt
-    lang = detect_language(user_text)
+    if not lang:
+        lang = detect_language(user_text)
+
     role = detect_role(user_text, lang)
     role_disp = role_label(lang, role)
     intent = detect_intent(user_text, lang)
@@ -1639,7 +1654,8 @@ async def api_answer(request: Request):
             "Næste skridt: indlæs flere kildedata i RAG for mere målrettet svar."
         )
         # Navnehilsen hvis muligt
-        answer = _inject_greeting(answer, customer_name_hint, "da") if lang == "da" else answer
+        if lang == "da":
+            answer = _inject_greeting(answer, customer_name_hint, "da")
         return {
             "finalAnswer": answer,
             "finalAnswerMarkdown": answer,
@@ -1662,8 +1678,9 @@ async def api_answer(request: Request):
     style = style_hint(output_mode, lang)
     policy_block = stop_orders_block(lang)
 
-    # style seed fra SQLite historik til samme kunde
-    snippets = await sqlite_style_snippets(from_email, n=int(os.getenv("STYLE_SNIPPETS_N","4")))
+    # style seed fra SQLite historik til samme kunde (kun hvis vi har en email)
+    use_style = bool(from_email and "@" in from_email)
+    snippets = await sqlite_style_snippets(from_email, n=int(os.getenv("STYLE_SNIPPETS_N","4"))) if use_style else []
     style_seed = "\n\n".join(f"— {s}" for s in snippets) if snippets else ""
 
     if intent in ("status_request", "admin"):
@@ -1678,6 +1695,15 @@ async def api_answer(request: Request):
     )
     if facts.get("open_bite") or facts.get("deep_bite") or facts.get("crowding_mm") is None:
         evidence_policy += "• For space management (IPR/distal/expansion): require Bolton analysis or explicitly mark it as pending.\n"
+
+    # Hvis kunden skriver "Hej Helle" til os, hold vores hilsen neutral
+    def _guess_greeting_target(txt: str) -> str:
+        t = (txt or "").lower().strip()
+        if t.startswith(("hej helle", "dear helle", "hej, helle")):
+            return "to_helle"
+        return "unknown"
+
+    greet_mode = _guess_greeting_target(user_text)
 
     final_prompt = (
         f"{system_prompt}\n\n"
@@ -1725,9 +1751,14 @@ async def api_answer(request: Request):
             src["anchor_id"] = meta.get("anchor_id") or meta.get("anchorId")
         sources.append(src)
 
-    # Navnehilsen for mails/plain på dansk
+    # Navnehilsen for mails/plain på dansk (undgå “Hej Helle” når kunden skrev til Helle)
     if lang == "da" and output_mode in ("mail", "plain"):
-        answer_out = _inject_greeting(answer_out, customer_name_hint, "da")
+        if greet_mode == "to_helle":
+            # hvis model skulle have skrevet "Hej Helle", neutralisér
+            if answer_out.strip().lower().startswith("hej helle"):
+                answer_out = "Hej,\n\n" + answer_out.strip()[len("Hej Helle,"):].lstrip()
+        else:
+            answer_out = _inject_greeting(answer_out, customer_name_hint, "da")
 
     # Skjul kilder i mails hvis ønsket
     if os.getenv("MAIL_HIDE_SOURCES","1") == "1" and output_mode == "mail":
@@ -1745,12 +1776,14 @@ async def api_answer(request: Request):
         "message": {"content": answer_out, "language": lang}
     }
 
+
 # --- Legacy shim (tving gamle klienter ind på det nye endpoint) ---
 # VIGTIGT: Sørg for, at du ikke har en anden @app.post("/answer") i filen.
 @app.post("/answer", dependencies=[Depends(require_rag_token)])
 async def legacy_answer_proxy(request: Request):
     # Ingen særlogik. Videresend 1:1 til det nye endpoint.
     return await api_answer(request)
+
 
 @app.post("/update_ticket")
 async def noop_update_ticket():
