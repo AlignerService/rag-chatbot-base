@@ -84,7 +84,6 @@ app.add_middleware(
 )
 
 # ========== BEGIN HOTFIX: SQLite + thread helpers (robust, /tmp-kompatibel) ==========
-logger = logging.getLogger("rag-app")
 DB_PATH = LOCAL_DB_PATH  # én sandhed: den sti dine env-vars peger på
 
 # Fallback hvis hydrator ikke findes i dette deploy
@@ -901,12 +900,6 @@ async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -
 # =========================
 # Text helpers
 # =========================
-def _strip_html(text: str) -> str:
-    if not text:
-        return ""
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
 
 def _extract_text_from_meta(item: Any) -> str:
     if item is None:
