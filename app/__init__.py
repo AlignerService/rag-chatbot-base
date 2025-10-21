@@ -532,297 +532,117 @@ async def init_db():
 # SQLite helpers (robust lookup på tværs af tabeller/kolonner)
 # =========================
 async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[str] = None) -> str:
-    """
-    Finder seneste IKKE-tomme tekst for en given ticketId på tværs af tabeller og kolonnenavne.
-    Prioritet:
-      1) Tabeller der har både ticket- og tekst-kolonne
-      2) Sortér efter tidskolonne hvis den findes, ellers rowid DESC
-    """
     if not _SQLITE_OK:
         logger.warning("SQLite not available")
         return ""
-
     tid = (ticket_id or "").strip()
     cid = (contact_id or "").strip() if contact_id else None
     if not tid:
         return ""
-
-    # Kandidater til kolonnenavne
-    text_cols     = ["plainText","plaintext","text","content","body","message","message_text","msg","payload"]
-    ticket_cols   = ["ticketId","ticket_id","tid","ticket","ticketID","ticket_id_fk"]
-    contact_cols  = ["contactId","contact_id","cid","contact","contactID"]
-    time_cols     = ["createdTime","createdAt","created_at","date","timestamp","time","updated_at","inserted_at","ts"]
-
+    text_cols   = ["plainText","plaintext","text","content","body","message","msg"]
+    ticket_cols = ["ticketId","ticket_id","tid","ticket"]
+    contact_cols= ["contactId","contact_id","cid","contact"]
+    time_cols   = ["createdTime","createdAt","created_at","timestamp","date","time"]
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-
-            # Saml alle tabeller
-            tables = []
-            async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
-                async for row in cur:
-                    tables.append(row["name"])
-
-            best_txt = ""
-            best_when = None
-
-            for table in tables:
+            async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as c:
+                tables=[r["name"] async for r in c]
+            best_txt,best_when="",""
+            for t in tables:
                 try:
-                    # Opslag af kolonner
-                    async with db.execute(f"PRAGMA table_info('{table}')") as cur:
-                        cols = [dict(r) async for r in cur]
-                    names = {c["name"] for c in cols}
-
-                    tcol = next((c for c in text_cols if c in names), None)
-                    kcol = next((c for c in ticket_cols if c in names), None)
-                    ccol = next((c for c in contact_cols if c in names), None)
-                    dcol = next((c for c in time_cols if c in names), None)
-
-                    # Vi skal mindst have tekst- og ticket-kolonne
-                    if not (tcol and kcol):
-                        continue
-
-                    where = [f"{kcol} = ?"]
-                    params: List[Any] = [tid]
-                    if cid and ccol:
-                        where.append(f"{ccol} = ?")
-                        params.append(cid)
-                    # Ikke-tom tekst
-                    where.append(f"COALESCE(TRIM({tcol}), '') <> ''")
-
-                    order_clause = f"ORDER BY {dcol} DESC" if dcol else "ORDER BY rowid DESC"
-                    sql = (
-                        f"SELECT {tcol} AS txt, {dcol if dcol else 'NULL'} AS dt "
-                        f"FROM '{table}' WHERE {' AND '.join(where)} {order_clause} LIMIT 1"
-                    )
-
-                    async with db.execute(sql, params) as cur:
-                        row = await cur.fetchone()
-                        if not row:
-                            continue
-
-                        txt = (row["txt"] or "").strip()
-                        if not txt:
-                            continue
-                        dt = row["dt"]
-
-                        # Vælg nyeste
-                        if best_when is None:
-                            best_txt, best_when = txt, dt
-                        else:
-                            newer = (dt and (not best_when or str(dt) > str(best_when)))
-                            if newer or not best_txt:
-                                best_txt, best_when = txt, dt
-
-                        logger.info(f"SQLite hit: table={table}, tcol={tcol}, kcol={kcol}, dcol={dcol}, dt={dt}")
-                except Exception as e:
-                    logger.info(f"SQLite scan failed on {table}: {e}")
-                    continue
-
+                    async with db.execute(f"PRAGMA table_info('{t}')") as c:
+                        cols=[r["name"] async for r in c]
+                    tcol=next((x for x in text_cols if x in cols),None)
+                    kcol=next((x for x in ticket_cols if x in cols),None)
+                    ccol=next((x for x in contact_cols if x in cols),None)
+                    dcol=next((x for x in time_cols if x in cols),None)
+                    if not (tcol and kcol): continue
+                    where=[f"{kcol}=?"]; p=[tid]
+                    if cid and ccol: where.append(f"{ccol}=?"); p.append(cid)
+                    where.append(f"COALESCE(TRIM({tcol}), '')<>''")
+                    order=f"ORDER BY {dcol} DESC" if dcol else "ORDER BY rowid DESC"
+                    sql=f"SELECT {tcol} AS txt,{dcol if dcol else 'NULL'} AS dt FROM '{t}' WHERE {' AND '.join(where)} {order} LIMIT 1"
+                    async with db.execute(sql,p) as c2:
+                        r=await c2.fetchone()
+                    if not r or not r['txt']: continue
+                    if not best_when or (r['dt'] and str(r['dt'])>str(best_when)):
+                        best_txt,best_when=r['txt'],r['dt']
+                except Exception: continue
             return best_txt or ""
     except Exception as e:
-        logger.exception(f"SQLite latest-thread lookup failed: {e}")
+        logger.exception(f"sqlite_latest_thread_plaintext failed: {e}")
         return ""
 
-# === Indlæs flere historiktråde som chunks (fallback-venlig) ===
-async def sqlite_load_threads_as_chunks(limit:int=2000) -> List[Dict[str,Any]]:
-    """
-    Læser nylige beskeder som generiske RAG-chunks.
-    Forsøger først den forventede struktur (messages/tickets/contacts).
-    Faller tilbage til en bred scanning, hvis tabellerne ikke findes.
-    Returnerer: [{"text": <plainText>, "meta": {...}}, ...]
-    """
-    if not _SQLITE_OK:
-        return []
-
-    out: List[Dict[str,Any]] = []
+# === Indlæs tråde som chunks ===
+async def sqlite_load_threads_as_chunks(limit:int=2000)->List[Dict[str,Any]]:
+    if not _SQLITE_OK: return []
+    out=[]
     try:
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-
-            # Find tabeller
-            tables = []
-            async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
+            db.row_factory=aiosqlite.Row
+            sql="""SELECT m.plainText AS txt,m.ticketId,t.contactId,t.subject,c.email
+                   FROM messages m
+                   LEFT JOIN tickets t ON t.ticketId=m.ticketId
+                   LEFT JOIN contacts c ON c.contactId=t.contactId
+                   WHERE COALESCE(TRIM(m.plainText),'')<>''
+                   ORDER BY m.createdAt DESC LIMIT ?"""
+            async with db.execute(sql,(limit,)) as cur:
                 async for r in cur:
-                    tables.append(r["name"])
-
-            def has_table(name: str) -> bool:
-                return name in tables
-
-            # 1) Happy-path: kendte tabeller
-            if has_table("messages"):
-                try:
-                    sql = """
-                        SELECT
-                            m.plainText AS txt,
-                            m.ticketId  AS ticketId,
-                            m.direction AS direction,
-                            m.author    AS author,
-                            m.author_email AS author_email,
-                            m.createdAt AS createdAt,
-                            t.contactId AS contactId,
-                            t.subject   AS subject,
-                            c.email     AS contact_email
-                        FROM messages m
-                        LEFT JOIN tickets  t ON t.ticketId = m.ticketId
-                        LEFT JOIN contacts c ON c.contactId = t.contactId
-                        WHERE COALESCE(TRIM(m.plainText),'') <> ''
-                        ORDER BY
-                            CASE WHEN m.createdAt GLOB '____-__-__*' THEN m.createdAt ELSE NULL END DESC,
-                            m.rowid DESC
-                        LIMIT ?
-                    """
-                    async with db.execute(sql, (limit,)) as cur:
-                        async for r in cur:
-                            txt = (r["txt"] or "").strip()
-                            if len(txt) < 40:
-                                continue
-                            meta = {
-                                "source": "HistoryDB",
-                                "title":  r["subject"] or "message",
-                                "ticketId": r["ticketId"],
-                                "contactId": r["contactId"],
-                                "contact_email": r["contact_email"],
-                                "direction": r["direction"],
-                                "author": r["author"],
-                                "author_email": r["author_email"],
-                                "date": r["createdAt"],
-                            }
-                            out.append({"text": txt, "meta": meta})
-                    return out
-                except Exception as e:
-                    logger.info(f"sqlite_load_threads_as_chunks (happy-path) failed: {e}")
-
-            # 2) Fallback: scan tabeller for plausible kolonner
-            text_cols     = ["plainText","plaintext","text","content","body","message","message_text","msg","payload"]
-            ticket_cols   = ["ticketId","ticket_id","tid","ticket","ticketID","ticket_id_fk"]
-            subject_cols  = ["subject","title","topic"]
-            time_cols     = ["createdTime","createdAt","created_at","date","timestamp","time","updated_at","inserted_at","ts"]
-
-            for table in tables:
-                try:
-                    async with db.execute(f"PRAGMA table_info('{table}')") as cur:
-                        cols = [dict(r) async for r in cur]
-                    names = {c["name"] for c in cols}
-                    tcol = next((c for c in text_cols if c in names), None)
-                    kcol = next((c for c in ticket_cols if c in names), None)
-                    dcol = next((c for c in time_cols if c in names), None)
-                    scol = next((c for c in subject_cols if c in names), None)
-
-                    if not tcol:
-                        continue
-                    order_clause = f"ORDER BY {dcol} DESC" if dcol else "ORDER BY rowid DESC"
-                    sql = (
-                        f"SELECT {tcol} AS txt, "
-                        f"{kcol if kcol else 'NULL'} AS ticketId, "
-                        f"{scol if scol else 'NULL'} AS subject, "
-                        f"{dcol if dcol else 'NULL'} AS createdAt "
-                        f"FROM '{table}' WHERE COALESCE(TRIM({tcol}), '') <> '' {order_clause} LIMIT ?"
-                    )
-                    async with db.execute(sql, (limit,)) as cur:
-                        async for r in cur:
-                            txt = (r["txt"] or "").strip()
-                            if len(txt) < 40:
-                                continue
-                            meta = {
-                                "source": "HistoryDB",
-                                "title":  r["subject"] or "message",
-                                "ticketId": r["ticketId"],
-                                "date": r["createdAt"],
-                                "table": table,
-                            }
-                            out.append({"text": txt, "meta": meta})
-                except Exception as e:
-                    logger.info(f"fallback scan failed on {table}: {e}")
-                    continue
-
-    except Exception as e:
-        logger.info(f"sqlite_load_threads_as_chunks: {e}")
-
+                    txt=(r["txt"] or "").strip()
+                    if len(txt)<40: continue
+                    out.append({"text":txt,"meta":{"ticketId":r["ticketId"],"subject":r["subject"],"contactId":r["contactId"],"contact_email":r["email"]}})
+    except Exception as e: logger.info(f"sqlite_load_threads_as_chunks: {e}")
     return out
 
-# === Tone-of-voice snippets from SQLite (fallback-venlig) ===
-async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -> List[str]:
-    """
-    Finder korte uddrag fra nylige udgående mails til samme kunde.
-    Bruger primært mail_outbox(to_email, plainText, createdAt); falder tilbage til bred scanning.
-    """
-    if not _SQLITE_OK or not to_email:
-        return []
-
+# === Udgående mails til tone ===
+async def sqlite_style_snippets(to_email:str,n:int=4,min_len:int=120)->List[str]:
+    if not _SQLITE_OK or not to_email: return []
+    want=to_email.strip().lower(); out=[]
     try:
-        want = (to_email or "").strip().lower()
-        out: List[str] = []
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-
-            # Hovedspor
-            try:
-                sql = """
-                    SELECT plainText
-                    FROM mail_outbox
-                    WHERE LOWER(TRIM(to_email)) = ?
-                      AND COALESCE(TRIM(plainText),'') <> ''
-                    ORDER BY
-                        CASE WHEN createdAt GLOB '____-__-__*' THEN createdAt ELSE NULL END DESC,
-                        rowid DESC
-                    LIMIT ?
-                """
-                async with db.execute(sql, (want, max(n*3, n))) as cur:
-                    async for r in cur:
-                        t = _strip_html((r["plainText"] or "").strip())
-                        if len(t) >= min_len:
-                            out.append(t[:600])
-                            if len(out) >= n:
-                                break
-            except Exception:
-                # Fallback bred scanning
-                tables = []
-                async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as cur:
-                    async for row in cur:
-                        tables.append(row["name"])
-                for table in tables:
-                    try:
-                        async with db.execute(f"PRAGMA table_info('{table}')") as cur:
-                            cols = [dict(r) async for r in cur]
-                        names = {c["name"] for c in cols}
-                        if not {"to_email"}.issubset(names):
-                            continue
-                        tcol = "plainText" if "plainText" in names else ("content" if "content" in names else None)
-                        if not tcol:
-                            continue
-                        sql = (
-                            f"SELECT {tcol} AS txt FROM '{table}' "
-                            f"WHERE LOWER(TRIM(to_email)) = ? AND COALESCE(TRIM({tcol}), '') <> '' "
-                            f"ORDER BY rowid DESC LIMIT ?"
-                        )
-                        async with db.execute(sql, (want, max(n*3, n))) as cur2:
-                            async for r in cur2:
-                                t = _strip_html((r["txt"] or "").strip())
-                                if len(t) >= min_len:
-                                    out.append(t[:600])
-                                    if len(out) >= n:
-                                        break
-                        if len(out) >= n:
-                            break
-                    except Exception:
-                        continue
-
-        # dedup på første ~120 tegn
-        uniq: List[str] = []
-        seen: set = set()
+            db.row_factory=aiosqlite.Row
+            sql="""SELECT plainText FROM mail_outbox
+                   WHERE LOWER(TRIM(to_email))=? AND COALESCE(TRIM(plainText),'')<>''
+                   ORDER BY createdAt DESC LIMIT ?"""
+            async with db.execute(sql,(want,n*3)) as cur:
+                async for r in cur:
+                    t=_strip_html((r["plainText"] or "").strip())
+                    if len(t)>=min_len:
+                        out.append(t[:600])
+                        if len(out)>=n: break
+        uniq=[]; seen=set()
         for s in out:
-            k = s[:120].lower()
+            k=s[:120].lower()
             if k not in seen:
-                uniq.append(s)
-                seen.add(k)
-            if len(uniq) >= n:
-                break
+                uniq.append(s); seen.add(k)
+            if len(uniq)>=n: break
         return uniq
-
     except Exception as e:
         logger.info(f"sqlite_style_snippets: {e}")
         return []
+
+# === Debug endpoints ===
+@app.get("/debug/sqlite/info")
+async def debug_sqlite_info():
+    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+        db.row_factory=aiosqlite.Row
+        async with db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name") as cur:
+            return {"tables":[r["name"] async for r in cur]}
+
+@app.get("/debug/sqlite/columns")
+async def debug_sqlite_columns(table:str):
+    cols=[]
+    async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+        db.row_factory=aiosqlite.Row
+        async with db.execute(f"PRAGMA table_info('{table}')") as cur:
+            async for r in cur: cols.append({"name":r["name"],"type":r["type"]})
+    return {"table":table,"columns":cols}
+
+@app.get("/debug/sqlite/find")
+async def debug_sqlite_find(ticketId:str,contactId:Optional[str]=None):
+    txt=await sqlite_latest_thread_plaintext(ticketId,contactId)
+    return {"ticketId":ticketId,"found":bool(txt),"sample":txt[:300] if txt else ""}
 
 # =========================
 # Debug endpoints (sæt disse i bunden sammen med dine andre routes)
