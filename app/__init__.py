@@ -1474,7 +1474,7 @@ async def api_answer(request: Request):
     subject = (body.get("subject") or "").strip() if isinstance(body, dict) else ""
     customer_name_hint = (body.get("contactName") or body.get("customerName") or "").strip()
 
-        # 2) Extract Zoho-style IDs first (preferred flow)
+    # 2) Extract Zoho-style IDs first (preferred flow)
     user_text = ""
     ticket_id = None
     contact_id = None
@@ -1620,7 +1620,7 @@ async def api_answer(request: Request):
         if hist:
             history_hits = [{"text": hist[:1500], "meta": {"source": "History", "title": "Recent thread"}}]
 
-    def text_of(ch): 
+    def text_of(ch):
         return ch.get("text","") if isinstance(ch,dict) else str(ch)
 
     def roughly_matches(q, hist_txt):
@@ -1752,12 +1752,15 @@ async def api_answer(request: Request):
         "message": {"content": answer_out, "language": lang}
     }
 
-# --- Legacy shims (for gamle integrationer / Zoho misrouting) ---
+# --- Legacy shim (tving gamle klienter ind på det nye endpoint) ---
+# VIGTIGT: Sørg for, at du ikke har en anden @app.post("/answer") i filen.
 @app.post("/answer", dependencies=[Depends(require_rag_token)])
-async def legacy_answer(request: Request):
+async def legacy_answer_proxy(request: Request):
+    # Ingen særlogik. Videresend 1:1 til det nye endpoint.
     return await api_answer(request)
 
 @app.post("/update_ticket")
 async def noop_update_ticket():
-    # Hvis Zoho prøver at ramme noget der ikke findes, så svar pænt 200
+    # Hvis Zoho rammer et gammelt endpoint, svar pænt 200
     return {"status": "noop"}
+
