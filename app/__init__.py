@@ -83,39 +83,176 @@ app.add_middleware(
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
-# ========== BEGIN HOTFIX: SQLite + thread helpers ==========
-# Brug eksisterende imports (logging, aiosqlite, datetime) fra toppen af filen.
+# ========== BEGIN HOTFIX: SQLite + thread helpers (robust) ==========
 logger = logging.getLogger("rag-app")
+DB_PATH = LOCAL_DB_PATH  # én sandhed
 
-# Én sandhed for DB-stien: brug den samme som resten af app'en
-DB_PATH = LOCAL_DB_PATH
+# Fallback hvis hydrator ikke findes i dette deploy
+async def _hydrate_thread_from_zoho(ticket_id: str) -> int:
+    try:
+        fn = globals().get("zoho_fetch_and_persist_thread")
+        if not fn:
+            logger.info("Zoho hydrate helper ikke tilgængelig i dette build – springer over.")
+            return 0
+        n = await fn(ticket_id)
+        return n or 0
+    except Exception:
+        logger.exception("Zoho hydrate failed for %s", ticket_id)
+        return 0
+
+async def _table_has(conn, table: str) -> bool:
+    async with conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ) as cur:
+        return await cur.fetchone() is not None
+
+async def _first_existing_col(conn, table: str, candidates: list[str]) -> str | None:
+    async with conn.execute(f"PRAGMA table_info('{table}')") as cur:
+        cols = [r[1] async for r in cur]  # r[1] = name
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
+
+def _coalesce_cols(cols: list[str]) -> str:
+    # Byg COALESCE-kæde med TRIM
+    parts = [f"TRIM({c})" for c in cols]
+    return "COALESCE(" + ", ".join(parts + ["''])"]) if parts else "''"
+
+async def _resolve_messages_mapping(conn) -> dict:
+    """
+    Finder kolonnenavne i 'messages' uanset schema-varianter og
+    returnerer et map der kan bruges i SELECT.
+    """
+    mapping = {}
+    table = "messages"
+    if not await _table_has(conn, table):
+        # Ingen messages-tabel. Vi kan ikke gøre mere pænt.
+        return {"table": None}
+
+    # Kandidatlister pr. felt
+    mapping["table"] = table
+    mapping["ticket"]    = await _first_existing_col(conn, table, ["ticketId","ticket_id","tid","ticket"])
+    mapping["message_id"]= await _first_existing_col(conn, table, ["message_id","msg_id","id"])
+    mapping["subject"]   = await _first_existing_col(conn, table, ["subject","title","emne"])
+    mapping["direction"] = await _first_existing_col(conn, table, ["direction","dir","type"])
+    mapping["created"]   = await _first_existing_col(conn, table, ["createdAt","created_at","createdTime","timestamp","date","time","created"])
+    # Tekstfelter i prioriteret rækkefølge
+    text_candidates = ["body_clean","plainText","plaintext","text","content","body","message","msg"]
+    async with conn.execute(f"PRAGMA table_info('{table}')") as cur:
+        cols = [r[1] async for r in cur]
+    mapping["text_cols"] = [c for c in text_candidates if c in cols]
+
+    return mapping
+
+def _where_direction_inbound(direction_col: str | None) -> str:
+    if not direction_col:
+        return "1=1"
+    # Normaliseret inbound: kolonnen kan være 'in','inbound','received'
+    return f"LOWER(TRIM({direction_col})) IN ('in','inbound','received')"
 
 async def _fetch_latest_inbound_from_sqlite(ticket_id: str) -> dict | None:
-    q = """
-    SELECT message_id, subject, body_clean, body, sender_name, created_at
-    FROM messages
-    WHERE ticket_id = ? AND direction = 'inbound'
-    ORDER BY created_at DESC
-    LIMIT 1
-    """
+    if not ticket_id:
+        return None
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute(q, (ticket_id,)) as cur:
+        mapping = await _resolve_messages_mapping(db)
+        if not mapping.get("table"):
+            logger.info("Ingen 'messages' tabel i SQLite – kan ikke hente inbound.")
+            return None
+
+        t = mapping["table"]
+        ticket_col = mapping["ticket"]
+        direction_col = mapping["direction"]
+        created_col = mapping["created"]
+        msg_id_col  = mapping["message_id"]
+        subj_col    = mapping["subject"]
+        text_cols   = mapping["text_cols"] or []
+
+        if not ticket_col or not text_cols:
+            logger.info("Schema mangler ticket/text kolonner – kan ikke hente inbound.")
+            return None
+
+        text_expr = _coalesce_cols(text_cols)
+
+        order_by = f"ORDER BY {created_col} DESC" if created_col else "ORDER BY rowid DESC"
+        inbound_where = _where_direction_inbound(direction_col)
+
+        sql = f"""
+            SELECT
+                {msg_id_col or 'NULL'} AS message_id,
+                {subj_col or "''"} AS subject,
+                {text_expr} AS body_any,
+                {created_col or 'NULL'} AS created_at
+            FROM {t}
+            WHERE {ticket_col} = ?
+              AND {inbound_where}
+              AND COALESCE(TRIM({text_cols[0]}), '') <> ''
+            {order_by}
+            LIMIT 1
+        """
+        async with db.execute(sql, (ticket_id,)) as cur:
             row = await cur.fetchone()
-            return dict(row) if row else None
+            if not row:
+                return None
+            return {
+                "message_id": row["message_id"],
+                "subject": row["subject"],
+                "body_clean": row["body_any"],
+                "body": row["body_any"],
+                "sender_name": None,
+                "created_at": row["created_at"],
+            }
 
 async def _fetch_recent_thread_rows(ticket_id: str, limit: int = 12) -> list[dict]:
-    q = """
-    SELECT message_id, subject, body_clean, body, direction, created_at
-    FROM messages
-    WHERE ticket_id = ?
-    ORDER BY created_at DESC
-    LIMIT ?
-    """
+    if not ticket_id:
+        return []
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute(q, (ticket_id, limit)) as cur:
-            return [dict(r) for r in await cur.fetchall()]
+        mapping = await _resolve_messages_mapping(db)
+        if not mapping.get("table"):
+            return []
+
+        t = mapping["table"]
+        ticket_col = mapping["ticket"]
+        direction_col = mapping["direction"]
+        created_col = mapping["created"]
+        msg_id_col  = mapping["message_id"]
+        subj_col    = mapping["subject"]
+        text_cols   = mapping["text_cols"] or []
+
+        if not ticket_col or not text_cols:
+            return []
+
+        text_expr = _coalesce_cols(text_cols)
+        order_by = f"ORDER BY {created_col} DESC" if created_col else "ORDER BY rowid DESC"
+
+        sql = f"""
+            SELECT
+                {msg_id_col or 'NULL'} AS message_id,
+                {subj_col or "''"} AS subject,
+                {text_expr} AS body_any,
+                {direction_col or "''"} AS direction,
+                {created_col or 'NULL'} AS created_at
+            FROM {t}
+            WHERE {ticket_col} = ?
+              AND COALESCE(TRIM({text_cols[0]}), '') <> ''
+            {order_by}
+            LIMIT ?
+        """
+        out = []
+        async with db.execute(sql, (ticket_id, limit)) as cur:
+            async for r in cur:
+                out.append({
+                    "message_id": r["message_id"],
+                    "subject": r["subject"],
+                    "body_clean": r["body_any"],
+                    "body": r["body_any"],
+                    "direction": (r["direction"] or "").strip(),
+                    "created_at": r["created_at"],
+                })
+        return out
 
 def _build_context_from_rows(rows: list[dict]) -> list[dict]:
     ctx = []
@@ -129,19 +266,6 @@ def _build_context_from_rows(rows: list[dict]) -> list[dict]:
         })
     return ctx
 
-async def _hydrate_thread_from_zoho(ticket_id: str) -> int:
-    """
-    Kald din eksisterende hydrering fra Zoho og persistér til SQLite.
-    Hvis du allerede har zoho_fetch_and_persist_thread(ticket_id), så brug den.
-    Returnér antal indlæste beskeder.
-    """
-    try:
-        n = await zoho_fetch_and_persist_thread(ticket_id)  # eksisterende helper i dit repo
-        return n or 0
-    except Exception:
-        logger.exception("Zoho hydrate failed for %s", ticket_id)
-        return 0
-
 def _inject_greeting(mail_text: str, customer_name: str, lang: str = "da") -> str:
     name = (customer_name or "").strip()
     if not name:
@@ -152,7 +276,7 @@ def _inject_greeting(mail_text: str, customer_name: str, lang: str = "da") -> st
     greeting = f"Hej {name},\n\n" if lang == "da" else f"Hi {name},\n\n"
     return greeting + mail_text
 
-# Små sanity endpoints, så vi kan bevise at Render må skrive/læse
+# Sanity endpoints
 @app.get("/healthz/sqlite")
 async def healthz_sqlite():
     try:
@@ -166,25 +290,17 @@ async def healthz_sqlite():
 
 @app.post("/debug/sqlite-write-read")
 async def debug_sqlite_write_read():
-    # Brug datetime fra toppen: from datetime import datetime
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.utcnow().isoformat()+"Z"
     try:
         async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS messages_debug(
-                    id INTEGER PRIMARY KEY,
-                    created_at TEXT,
-                    note TEXT
-                )
-            """)
-            await db.execute(
-                "INSERT INTO messages_debug(created_at, note) VALUES(?, ?)",
-                (now, "ping"),
-            )
+            await db.execute("""CREATE TABLE IF NOT EXISTS messages_debug(
+                id INTEGER PRIMARY KEY,
+                created_at TEXT,
+                note TEXT
+            )""")
+            await db.execute("INSERT INTO messages_debug(created_at, note) VALUES(?, ?)", (now, "ping"))
             await db.commit()
-            async with db.execute(
-                "SELECT created_at, note FROM messages_debug ORDER BY id DESC LIMIT 5"
-            ) as cur:
+            async with db.execute("SELECT created_at, note FROM messages_debug ORDER BY id DESC LIMIT 5") as cur:
                 rows = await cur.fetchall()
         return {"ok": True, "wrote": now, "recent": [tuple(r) for r in rows]}
     except Exception as e:
