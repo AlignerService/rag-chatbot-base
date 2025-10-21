@@ -1355,11 +1355,12 @@ async def api_answer(request: Request):
     # Extra optional fields
     from_email = (body.get("fromEmail") or "").strip().lower() if isinstance(body, dict) else ""
     subject = (body.get("subject") or "").strip() if isinstance(body, dict) else ""
+    customer_name_hint = (body.get("contactName") or body.get("customerName") or "").strip()
 
     # 2) Extract Zoho-style IDs first (preferred flow)
     user_text = ""
-    ticket_id = None
-    contact_id = None
+    ticket_id: Optional[str] = None
+    contact_id: Optional[str] = None
 
     if isinstance(body, dict):
         if "ticketId" in body and "question" in body:
@@ -1370,18 +1371,27 @@ async def api_answer(request: Request):
                 user_text = txt
                 logger.info("Zoho ID-only: pulled latest thread from SQLite.")
             else:
-    logger.info("SQLite tom for ticket %s – prøver Zoho hydrate...", ticket_id)
-    n = await _hydrate_thread_from_zoho(ticket_id)
-    logger.info("Zoho hydrate indlæste %s beskeder", n)
-    latest_after = await _fetch_latest_inbound_from_sqlite(ticket_id)
+                # Hydrate fra Zoho og prøv igen før vi falder tilbage til 'question'
+                logger.info("SQLite tom for ticket %s – prøver Zoho hydrate...", ticket_id)
+                try:
+                    n = await _hydrate_thread_from_zoho(ticket_id)
+                except Exception:
+                    n = 0
+                    logger.exception("Hydrate kald fejlede")
+                logger.info("Zoho hydrate indlæste %s beskeder", n)
+                latest_after = await _fetch_latest_inbound_from_sqlite(ticket_id)
 
-    if latest_after:
-        user_text = (latest_after.get("body_clean") or latest_after.get("body") or "").strip()
-        logger.info("Pulled inbound after hydrate – bruger kundens mailtekst.")
-    else:
-        user_text = str(body.get("question") or "").strip()
-        logger.warning("Ingen inbound efter hydrate – falder tilbage til 'question' feltet.")
+                if latest_after:
+                    user_text = (latest_after.get("body_clean") or latest_after.get("body") or "").strip()
+                    # Brug afsendernavn fra seneste inbound som hilsen-hint, hvis vi ikke har andet
+                    if not customer_name_hint:
+                        customer_name_hint = (latest_after.get("sender_name") or "").strip()
+                    logger.info("Pulled inbound after hydrate – bruger kundens mailtekst.")
+                else:
+                    user_text = str(body.get("question") or "").strip()
+                    logger.warning("Ingen inbound efter hydrate – falder tilbage til 'question' feltet.")
 
+        # Sekundære felter hvis ovenstående ikke gav noget
         if not user_text:
             for key_guess in ["plainText", "text", "message", "content", "body", "question"]:
                 if key_guess in body and isinstance(body[key_guess], str) and body[key_guess].strip():
@@ -1399,14 +1409,13 @@ async def api_answer(request: Request):
         user_text = json.dumps(body, ensure_ascii=False)
 
     logger.info(f"user_text(sample 300): {user_text[:300]}")
+
     # KORTSLUT "boilerplate"/tomme henvendelser fra Zoho før vi rammer LLM
     is_boiler = (
         bool(re.search(r"please provide the best ai[- ]generated reply", (user_text or ""), re.I))
         or len((user_text or "").strip()) < 15
     )
-
     if is_boiler:
-        # Pæn kvitteringsmail i ren tekst (dansk)
         answer = (
             "Subject: Tak for din besked\n\n"
             "Hej,\n\n"
@@ -1416,6 +1425,8 @@ async def api_answer(request: Request):
             "Venlig hilsen\n"
             "AlignerService Team"
         )
+        # Navnehilsen hvis vi har et navn og mailen ikke allerede starter med Hej/Kære
+        answer = _inject_greeting(answer, customer_name_hint, "da")
         return {
             "finalAnswer": answer,
             "finalAnswerMarkdown": answer,
@@ -1438,11 +1449,8 @@ async def api_answer(request: Request):
     if intent in ("status_request", "admin") and not (isinstance(body, dict) and "output_mode" in body):
         output_mode = "mail"
 
-    # choose system prompt: for status/admin keep it short, no clinic
-    if intent in ("status_request", "admin"):
-        system_prompt = make_customer_system_prompt(lang)
-    else:
-        system_prompt = make_system_prompt(lang, role)
+    # choose system prompt
+    system_prompt = make_customer_system_prompt(lang) if intent in ("status_request", "admin") else make_system_prompt(lang, role)
 
     # Extract brand/case
     brand_case = extract_brand_and_case(subject, user_text) if os.getenv("BRAND_ENABLE","1") == "1" else {"brand": None, "caseId": None}
@@ -1507,28 +1515,25 @@ async def api_answer(request: Request):
         if roughly_matches(retrieval_query, text_of(h)):
             history_primary.append(h)
 
-    if history_primary:
-        combined_chunks = history_primary + diversified
-    else:
-        combined_chunks = diversified + history_hits
+    combined_chunks = history_primary + diversified if history_primary else diversified + history_hits
 
     # 5) Failsafe if no context at all
     if not combined_chunks:
-        # Fallback mail pr. intent
         fb = fallback_mail(lang, intent) if intent in ("status_request","admin","clinical_support") else ""
         answer = fb or (
             "Grundprotokol når kontekst mangler:\n"
             "1) Screening/diagnose → 2) Plan (staging, IPR, attachments) → 3) Start → 4) Kontroller/tracking → 5) Refinement → 6) Retention.\n"
             "Næste skridt: indlæs flere kildedata i RAG for mere målrettet svar."
         )
-        sources = []
+        # Navnehilsen hvis muligt
+        answer = _inject_greeting(answer, customer_name_hint, "da") if lang == "da" else answer
         return {
             "finalAnswer": answer,
             "finalAnswerMarkdown": answer,
             "finalAnswerPlain": md_to_plain(answer),
             "language": lang,
             "role": role_disp,
-            "sources": sources,
+            "sources": [],
             "ticketId": ticket_id,
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "message": {"content": answer, "language": lang}
@@ -1540,7 +1545,7 @@ async def api_answer(request: Request):
 
     context = "\n\n".join(_clip(_deidentify(text_of(ch))) for ch in combined_chunks)[:9000]
 
-    # 6) Compose final prompt (med evidens-policy)
+    # 6) Compose final prompt
     style = style_hint(output_mode, lang)
     policy_block = stop_orders_block(lang)
 
@@ -1548,7 +1553,6 @@ async def api_answer(request: Request):
     snippets = await sqlite_style_snippets(from_email, n=int(os.getenv("STYLE_SNIPPETS_N","4")))
     style_seed = "\n\n".join(f"— {s}" for s in snippets) if snippets else ""
 
-    # Tilføj kort kundeboilerplate for status/admin
     if intent in ("status_request", "admin"):
         style += "\n" + customer_mail_guidance(lang, intent)
 
@@ -1593,13 +1597,9 @@ async def api_answer(request: Request):
         )
 
     answer_plain = md_to_plain(answer_markdown)
-    if output_mode in ("plain", "tech_brief", "mail"):
-        # 'mail' skal ALTID være ren tekst-epost uden markdown
-        answer_out = answer_plain
-    else:
-        answer_out = answer_markdown
+    answer_out = answer_plain if output_mode in ("plain", "tech_brief", "mail") else answer_markdown
 
-    # 8) Sources (byg direkte fra combined_chunks, så rækkefølge matcher)
+    # 8) Sources
     sources = []
     for ch in combined_chunks[:6]:
         meta = ch.get("meta", {}) if isinstance(ch, dict) else {}
@@ -1611,6 +1611,10 @@ async def api_answer(request: Request):
         if isinstance(meta, dict) and (meta.get("anchor_id") or meta.get("anchorId")):
             src["anchor_id"] = meta.get("anchor_id") or meta.get("anchorId")
         sources.append(src)
+
+    # Navnehilsen for mails/plain på dansk
+    if lang == "da" and output_mode in ("mail", "plain"):
+        answer_out = _inject_greeting(answer_out, customer_name_hint, "da")
 
     # Skjul kilder i mails hvis ønsket
     if os.getenv("MAIL_HIDE_SOURCES","1") == "1" and output_mode == "mail":
@@ -1631,11 +1635,9 @@ async def api_answer(request: Request):
 # --- Legacy shims (for gamle integrationer / Zoho misrouting) ---
 @app.post("/answer", dependencies=[Depends(require_rag_token)])
 async def legacy_answer(request: Request):
-    # Viderekald den rigtige handler
     return await api_answer(request)
 
 @app.post("/update_ticket")
 async def noop_update_ticket():
     # Hvis Zoho prøver at ramme noget der ikke findes, så svar pænt 200
     return {"status": "noop"}
-
