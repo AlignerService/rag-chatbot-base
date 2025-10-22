@@ -25,6 +25,7 @@ from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from app.db.migrate import run_migrations
 
 # =========================
 # Logging & Config
@@ -334,7 +335,18 @@ async def on_startup():
 
     try:
         await download_db()
+
+        # --- Migrations: soft-fail i produktion ---
+        try:
+            logger.info("Running DB migrations...")
+            await run_migrations()
+            logger.info("DB migrations complete.")
+        except Exception as e:
+            logger.exception("Migration failed; continuing without schema changes")
+            # raise  # behold denne i DEV hvis du vil stoppe hårdt ved fejl
+
         await init_db()
+
         # --- load Q&A JSON (unchanged) ---
         global _QA_ITEMS
         _QA_ITEMS = _qa_load_items()
