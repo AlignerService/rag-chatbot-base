@@ -327,39 +327,40 @@ async def on_startup():
         logger.error("RAG_BEARER_TOKEN is missing!")
 
     # ensure dir for local db
-try:
-    base = os.path.dirname(LOCAL_DB_PATH)
-    if base:
-        os.makedirs(base, exist_ok=True)
-except Exception:
-    pass
-
-try:
-    # Seed kun første gang / hvis filen mangler
-    db_path = Path(LOCAL_DB_PATH)
-    if not db_path.exists():
-        logger.info("Local DB missing; seeding from Dropbox...")
-        await download_db()
-    else:
-        logger.info(f"Local DB present at {db_path}; skipping Dropbox seed")
-
-    # --- Migrations: soft-fail i produktion ---
     try:
-        logger.info("Running DB migrations...")
-        await run_migrations()
-        logger.info("DB migrations complete.")
+        base = os.path.dirname(LOCAL_DB_PATH)
+        if base:
+            os.makedirs(base, exist_ok=True)
+    except Exception:
+        pass
+
+    try:
+        # Seed kun første gang / hvis filen mangler
+        db_path = Path(LOCAL_DB_PATH)
+        if not db_path.exists():
+            logger.info("Local DB missing; seeding from Dropbox...")
+            await download_db()
+        else:
+            logger.info(f"Local DB present at {db_path}; skipping Dropbox seed")
+
+        # --- Migrations: soft-fail i produktion ---
+        try:
+            logger.info("Running DB migrations...")
+            await run_migrations()
+            logger.info("DB migrations complete.")
+        except Exception as e:
+            logger.exception("Migration failed; continuing without schema changes")
+            # raise  # brug kun i dev hvis du vil stoppe hårdt
+
+        await init_db()
+
+        # --- load Q&A JSON (unchanged) ---
+        global _QA_ITEMS
+        _QA_ITEMS = _qa_load_items()
+        logger.info("RAG startup complete")
     except Exception as e:
-        logger.exception("Migration failed; continuing without schema changes")
-        # raise  # brug kun i dev hvis du vil stoppe hårdt
+        logger.exception(f"Startup failed: {e}")
 
-    await init_db()
-
-    # --- load Q&A JSON (unchanged) ---
-    global _QA_ITEMS
-    _QA_ITEMS = _qa_load_items()
-    logger.info("RAG startup complete")
-except Exception as e:
-    logger.exception(f"Startup failed: {e}")
 
 # =========================
 # Language detection
