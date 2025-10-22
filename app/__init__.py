@@ -40,7 +40,7 @@ METADATA_FILE       = os.getenv("METADATA_FILE", "metadata.json")    # fallback 
 # Brug KUN METADATA_FILES nedenfor (kommasepareret/whitespace/semikolon)
 METADATA_FILES_RAW  = os.getenv("METADATA_FILES", "")
 
-LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH", "/tmp/knowledge.sqlite")
+LOCAL_DB_PATH = os.getenv("LOCAL_DB_PATH", "/data/rag.sqlite3")
 
 RAG_BEARER_TOKEN   = os.getenv("RAG_BEARER_TOKEN", "")
 
