@@ -1,6 +1,6 @@
 import os, asyncio, aiosqlite, glob
 
-DB_PATH = os.getenv("SQLITE_PATH", "/Users/macpro/Dropbox/AlignerService/RAG:Database:aktiv/rag.sqlite3")
+DB_PATH = os.getenv("SQLITE_PATH", "/data/rag.sqlite3")
 MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")
 
 async def run_migrations():
