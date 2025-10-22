@@ -85,6 +85,9 @@ app.add_middleware(
     allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
+from app.routers import admin_sync
+app.include_router(admin_sync.router)
+
 # ========== BEGIN HOTFIX: SQLite + thread helpers (robust, /tmp-kompatibel) ==========
 DB_PATH = LOCAL_DB_PATH  # én sandhed: den sti dine env-vars peger på
 
