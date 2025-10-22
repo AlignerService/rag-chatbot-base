@@ -26,7 +26,26 @@ from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
 from app.db.migrate import run_migrations
+from app.routers import chat  # ← NYT
+
+# =========================
+# FastAPI & CORS
+# =========================
+app = FastAPI()
+
+# Stram CORS som ønsket
+WIX_ORIGIN = os.getenv("WIX_ORIGIN", "").strip()  # fx https://www.ditdomæne.com
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[WIX_ORIGIN] if WIX_ORIGIN else ["*"],  # sæt WIX_ORIGIN i Render
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Chat-Token"],
+)
+
+# Registrér chat-routeren
+app.include_router(chat.router)
 
 # =========================
 # Logging & Config
