@@ -333,6 +333,19 @@ async def debug_sqlite_write_read():
     except Exception as e:
         return {"ok": False, "error": str(e), "db_path": DB_PATH}
 
+@app.get("/debug/sqlite-cols")
+async def debug_sqlite_cols():
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            cols = []
+            async with db.execute("PRAGMA table_info('chat_sessions')") as cur:
+                async for r in cur:
+                    # r: (cid, name, type, notnull, dflt_value, pk)
+                    cols.append({"name": r[1], "type": r[2], "pk": bool(r[5])})
+        return {"ok": True, "table": "chat_sessions", "columns": cols}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 @app.on_event("startup")
 async def on_startup():
     if RAG_BEARER_TOKEN:
