@@ -28,23 +28,24 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.db.migrate import run_migrations
-from app.routers import chat  # ← NYT
 
 # =========================
 # FastAPI & CORS
 # =========================
 app = FastAPI()
 
-# Stram CORS som ønsket
-WIX_ORIGIN = os.getenv("WIX_ORIGIN", "").strip()  # fx https://www.ditdomæne.com
+WIX_ORIGIN = os.getenv("WIX_ORIGIN", "").strip()  # fx https://www.alignerservice.com/support
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[WIX_ORIGIN] if WIX_ORIGIN else ["*"],  # sæt WIX_ORIGIN i Render
     allow_methods=["POST", "GET", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Chat-Token"],
+    allow_headers=["Content-Type", "X-Chat-Token", "Authorization"],
+    # allow_credentials=True,  # kun hvis du bruger cookies/session
 )
 
-# Registrér chat-routeren
+# Registrér routere EFTER CORS
+from app.routers import admin_sync, chat
+app.include_router(admin_sync.router)
 app.include_router(chat.router)
 
 # =========================
@@ -94,18 +95,6 @@ _SQLITE_OK = False
 
 # Q&A globals
 _QA_ITEMS: List[Dict[str, Any]] = []
-
-# =========================
-# FastAPI & CORS
-# =========================
-app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
-)
-
-from app.routers import admin_sync
-app.include_router(admin_sync.router)
 
 # ========== BEGIN HOTFIX: SQLite + thread helpers (robust, /tmp-kompatibel) ==========
 DB_PATH = LOCAL_DB_PATH  # én sandhed: den sti dine env-vars peger på
