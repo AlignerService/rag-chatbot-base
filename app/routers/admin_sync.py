@@ -7,13 +7,14 @@ import os
 import time
 import logging
 
+# VIGTIGT: ingen "from app import logger" her (ellers circular import)
+logger = logging.getLogger("rag-app")
+
+# Denne funktion må gerne importeres – den trækker ikke app ind
 from app.sync.dropbox_sync import sync_once
 
 router = APIRouter(prefix="/admin/sync", tags=["admin-sync"])
 bearer = HTTPBearer(auto_error=True)
-
-# Lokal logger — INGEN import fra app.__init__ (ellers circular import)
-logger = logging.getLogger("rag-app")
 
 
 def _auth(creds: HTTPAuthorizationCredentials = Depends(bearer)) -> bool:
@@ -32,31 +33,33 @@ def ping(_: bool = Depends(_auth)):
     return {"ok": True}
 
 
-# ——— INSPECT: læs kun metadata fra Dropbox (ingen download) ———
 @router.get("/inspect")
 def inspect(_: bool = Depends(_auth)):
+    """
+    Læs kun metadata om DB-filen i Dropbox (ingen download).
+    Bruger enten ACCESS TOKEN eller Refresh Token flow.
+    """
     try:
-        import dropbox  # lazy import, så modulet ikke er et hårdt krav
+        import dropbox  # lazy import så modulet ikke kræves ved runtime uden /inspect
         dbx = None
 
-        tok = os.getenv("DROPBOX_ACCESS_TOKEN", "").strip()
+        tok = (os.getenv("DROPBOX_ACCESS_TOKEN") or "").strip()
+        rf = (os.getenv("DROPBOX_REFRESH_TOKEN") or "").strip()
+        cid = (os.getenv("DROPBOX_CLIENT_ID") or "").strip()
+        sec = (os.getenv("DROPBOX_CLIENT_SECRET") or "").strip()
+
         if tok:
             dbx = dropbox.Dropbox(tok)
+        elif rf and cid and sec:
+            dbx = dropbox.Dropbox(
+                oauth2_refresh_token=rf,
+                app_key=cid,
+                app_secret=sec,
+            )
         else:
-            rf = os.getenv("DROPBOX_REFRESH_TOKEN", "").strip()
-            cid = os.getenv("DROPBOX_CLIENT_ID", "").strip()
-            sec = os.getenv("DROPBOX_CLIENT_SECRET", "").strip()
-            if rf and cid and sec:
-                dbx = dropbox.Dropbox(
-                    oauth2_refresh_token=rf,
-                    app_key=cid,
-                    app_secret=sec,
-                )
-
-        if not dbx:
             raise RuntimeError("Dropbox credentials missing")
 
-        path = os.getenv("DROPBOX_DB_PATH", "").strip()
+        path = (os.getenv("DROPBOX_DB_PATH") or "").strip()
         if not path:
             raise RuntimeError("DROPBOX_DB_PATH missing")
         if not path.startswith("/"):
@@ -79,11 +82,16 @@ def inspect(_: bool = Depends(_auth)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ——— RUN: kør sync i baggrunden (returnér straks) ———
 def _sync_job():
+    """
+    Baggrundsjob for sync. Kører sync_once og logger resultat.
+    """
     logger.info("SYNC: background job started")
-    res = sync_once(logger)
-    logger.info(f"SYNC: background job result={res}")
+    try:
+        res = sync_once(logger)
+        logger.info(f"SYNC: background job result={res}")
+    except Exception:
+        logger.exception("SYNC: background job crashed")
 
 
 @router.post("/run")
@@ -94,12 +102,16 @@ def run_sync(
 ):
     """
     mode=bg (default): starter baggrunds-job og returnerer straks {accepted:true}
-    mode=fg: kør synkron og returnér resultatet (kan time out, ikke anbefalet til store filer)
+    mode=fg: kør synkront og returnér resultatet (kan time out ved store filer)
     """
     if mode == "fg":
         logger.info("SYNC: /admin/sync/run (foreground)")
-        res = sync_once(logger)
-        return res
+        try:
+            res = sync_once(logger)
+            return res
+        except Exception as e:
+            logger.exception("SYNC: foreground failed")
+            raise HTTPException(status_code=500, detail=str(e))
     else:
         logger.info("SYNC: /admin/sync/run (background accepted)")
         background.add_task(_sync_job)
