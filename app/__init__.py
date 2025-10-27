@@ -1,3 +1,5 @@
+# app/__init__.py
+
 import os
 import json
 import logging
@@ -30,28 +32,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.db.migrate import run_migrations
 
 # =========================
-# FastAPI & CORS
+# [A] Logging & basic config (skal være tidligt)
 # =========================
-app = FastAPI()
-
-WIX_ORIGIN = os.getenv("WIX_ORIGIN", "").strip()  # fx https://www.alignerservice.com/support
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[WIX_ORIGIN] if WIX_ORIGIN else ["*"],  # sæt WIX_ORIGIN i Render
-    allow_methods=["POST", "GET", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Chat-Token", "Authorization"],
-    # allow_credentials=True,  # kun hvis du bruger cookies/session
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 )
-
-# Registrér routere EFTER CORS
-from app.routers import admin_sync, chat
-app.include_router(admin_sync.router)
-app.include_router(chat.router)
-
-# =========================
-# Logging & Config
-# =========================
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 logger = logging.getLogger("rag-app")
 
 FAISS_INDEX_FILE   = os.getenv("FAISS_INDEX_FILE", "faiss.index")
@@ -96,8 +82,8 @@ _SQLITE_OK = False
 # Q&A globals
 _QA_ITEMS: List[Dict[str, Any]] = []
 
-# ========== BEGIN HOTFIX: SQLite + thread helpers (robust, /tmp-kompatibel) ==========
-DB_PATH = LOCAL_DB_PATH  # én sandhed: den sti dine env-vars peger på
+# ========== BEGIN HOTFIX: SQLite + thread helpers ==========
+DB_PATH = LOCAL_DB_PATH  # én sandhed
 
 # Fallback hvis hydrator ikke findes i dette deploy
 async def _hydrate_thread_from_zoho(ticket_id: str) -> int:
@@ -280,7 +266,44 @@ def _inject_greeting(mail_text: str, customer_name: str, lang: str = "da") -> st
         return mail_text
     greeting = f"Hej {name},\n\n" if lang == "da" else f"Hi {name},\n\n"
     return greeting + mail_text
+# ========== END HOTFIX ==========
 
+
+# =========================
+# [B] FastAPI & CORS (app kan godt komme før helpers; bare ikke router-import)
+# =========================
+app = FastAPI()
+
+WIX_ORIGIN = os.getenv("WIX_ORIGIN", "").strip()  # fx https://www.alignerservice.com/support
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[WIX_ORIGIN] if WIX_ORIGIN else ["*"],  # sæt WIX_ORIGIN i Render
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Chat-Token", "Authorization"],
+    # allow_credentials=True,
+)
+
+
+# =========================
+# [C] Security
+# =========================
+bearer_scheme = HTTPBearer(auto_error=True)
+def require_rag_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    if credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=403, detail="Invalid or missing RAG token")
+    incoming = (credentials.credentials or "").strip()
+    expected = (RAG_BEARER_TOKEN or "").strip()
+    if not expected:
+        logger.error("Server RAG_BEARER_TOKEN not set")
+        raise HTTPException(status_code=403, detail="Server token not configured")
+    if not hmac.compare_digest(incoming, expected):
+        raise HTTPException(status_code=403, detail="Invalid or missing RAG token")
+    return True
+
+
+# =========================
+# [D] Startup
+# =========================
 @app.get("/healthz/sqlite")
 async def healthz_sqlite():
     try:
@@ -309,27 +332,7 @@ async def debug_sqlite_write_read():
         return {"ok": True, "wrote": now, "recent": [tuple(r) for r in rows]}
     except Exception as e:
         return {"ok": False, "error": str(e), "db_path": DB_PATH}
-# ========== END HOTFIX ==========
 
-# =========================
-# Security
-# =========================
-bearer_scheme = HTTPBearer(auto_error=True)
-def require_rag_token(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    if credentials.scheme.lower() != "bearer":
-        raise HTTPException(status_code=403, detail="Invalid or missing RAG token")
-    incoming = (credentials.credentials or "").strip()
-    expected = (RAG_BEARER_TOKEN or "").strip()
-    if not expected:
-        logger.error("Server RAG_BEARER_TOKEN not set")
-        raise HTTPException(status_code=403, detail="Server token not configured")
-    if not hmac.compare_digest(incoming, expected):
-        raise HTTPException(status_code=403, detail="Invalid or missing RAG token")
-    return True
-
-# =========================
-# Startup
-# =========================
 @app.on_event("startup")
 async def on_startup():
     if RAG_BEARER_TOKEN:
@@ -361,7 +364,6 @@ async def on_startup():
             logger.info("DB migrations complete.")
         except Exception as e:
             logger.exception("Migration failed; continuing without schema changes")
-            # raise  # brug kun i dev hvis du vil stoppe hårdt
 
         await init_db()
 
@@ -374,7 +376,7 @@ async def on_startup():
 
 
 # =========================
-# Language detection
+# [E] Language detection
 # =========================
 def detect_language(text: str) -> str:
     if not text:
@@ -404,7 +406,7 @@ def detect_language(text: str) -> str:
 
 
 # =========================
-# Intent detection (simple heuristic)
+# [F] Intent detection
 # =========================
 def detect_intent(text: str, lang: str) -> str:
     t = (text or "").lower()
@@ -424,8 +426,9 @@ def detect_intent(text: str, lang: str) -> str:
         return "admin"
     return "clinical_support"
 
+
 # =========================
-# Customer-facing system + format hints (professional customers)
+# [G] Customer-facing prompts
 # =========================
 def make_customer_system_prompt(lang: str) -> str:
     if lang == "da":
@@ -440,8 +443,9 @@ def make_customer_system_prompt(lang: str) -> str:
         "SAFETY\n• No passwords or internal system details. • No patient names. • Use only the case ID the customer provided.\n"
     )
 
+
 # =========================
-# Brand & case-id detection
+# [H] Brand & case-id detection
 # =========================
 _BRAND_PATTERNS = [
     ("Invisalign",   re.compile(r"\b(\d{8})\b")),          # e.g. 26034752
@@ -472,9 +476,6 @@ def _normalize_brand(s: str) -> Optional[str]:
     return _BRAND_ALIASES.get(t) or None
 
 def extract_brand_and_case(subject: str, body: str) -> Dict[str, Optional[str]]:
-    """
-    Heuristik: søg efter brand-hints; brug derefter brand-specifikt mønster. Hvis brand ikke kendes, prøv alle mønstre og vælg entydigt hit.
-    """
     txt = f"{subject or ''}\n{body or ''}"
     low = txt.lower()
 
@@ -486,7 +487,6 @@ def extract_brand_and_case(subject: str, body: str) -> Dict[str, Optional[str]]:
 
     found_brand, found_case = None, None
 
-    # hvis vi har et brand hint, prøv kun det tilsvarende mønster
     if brand_hint:
         for name, pat in [(n,p) for (n,p, *_) in _BRAND_PATTERNS]:
             if name == brand_hint:
@@ -495,7 +495,6 @@ def extract_brand_and_case(subject: str, body: str) -> Dict[str, Optional[str]]:
                     found_brand, found_case = name, m.group(1)
                 break
 
-    # ellers prøv alle og vælg entydigt mønster
     if not found_case:
         hits = []
         for name, pat in [(n,p) for (n,p, *_) in _BRAND_PATTERNS]:
@@ -507,8 +506,9 @@ def extract_brand_and_case(subject: str, body: str) -> Dict[str, Optional[str]]:
 
     return {"brand": found_brand, "caseId": found_case}
 
+
 # =========================
-# Role detection (heuristic)
+# [I] Role detection
 # =========================
 def detect_role(text: str, lang: str) -> str:
     t = (text or "").lower()
@@ -551,8 +551,9 @@ def role_label(lang: str, role: str) -> str:
     }
     return labels.get(lang, labels["en"]).get(role, role)
 
+
 # =========================
-# Persona prompt (role-aware)
+# [J] Persona prompt (role-aware)
 # =========================
 def make_system_prompt(lang: str, role: str) -> str:
     role_text_da = {
@@ -602,8 +603,9 @@ def make_system_prompt(lang: str, role: str) -> str:
         "When output_mode is 'mail': write a complete email in plain text and do not include sources or language fields in the body."
     )
 
+
 # =========================
-# Dropbox download (access token OR refresh flow)
+# [K] Dropbox download
 # =========================
 async def download_db():
     if not DROPBOX_DB_PATH:
@@ -637,27 +639,19 @@ async def download_db():
     except Exception as e:
         logger.exception(f"Dropbox download failed: {e}")
 
+
 # =========================
-# Metadata loader (ROBUST, støtter 'chunks' mv. uden formatændring)
+# [L] Metadata loader
 # =========================
 def _read_text(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
 def _json_to_list_any(txt: str) -> List[Dict[str, Any]]:
-    """
-    Accepterer:
-      - JSON-liste
-      - dict med nøgler: chunks/items/data/documents/rows -> liste
-      - dict med liste-værdier -> flatten
-      - NDJSON (én JSON pr. linje)
-    Returnerer en liste af objekter; ikke-objekt-elementer filtreres bort.
-    """
     import json
     def only_objs(seq):
         return [x for x in seq if isinstance(x, dict)]
 
-    # 1) Prøv som 'almindelig' JSON
     try:
         obj = json.loads(txt)
         if isinstance(obj, list):
@@ -666,7 +660,6 @@ def _json_to_list_any(txt: str) -> List[Dict[str, Any]]:
             for k in ("chunks","items","data","documents","rows"):
                 if isinstance(obj.get(k), list):
                     return only_objs(obj[k])
-            # flatten liste-væier
             flat = []
             for v in obj.values():
                 if isinstance(v, list):
@@ -676,7 +669,6 @@ def _json_to_list_any(txt: str) -> List[Dict[str, Any]]:
     except Exception:
         pass
 
-    # 2) NDJSON fallback
     out = []
     for line in txt.splitlines():
         line = line.strip()
@@ -691,7 +683,6 @@ def _json_to_list_any(txt: str) -> List[Dict[str, Any]]:
     if out:
         return out
 
-    # 3) Tomt
     return []
 
 def _load_metadata_files() -> List[Dict[str, Any]]:
@@ -700,7 +691,6 @@ def _load_metadata_files() -> List[Dict[str, Any]]:
     paths: List[str] = []
 
     if paths_env:
-        # split på komma/semikolon/whitespace
         for part in re.split(r"[,\s;]+", paths_env):
             if part:
                 paths.append(part)
@@ -730,8 +720,9 @@ def _load_metadata_files() -> List[Dict[str, Any]]:
     logger.info(f"Total metadata items loaded: {len(loaded)}")
     return loaded
 
+
 # =========================
-# Init FAISS / metadata / SQLite (robust file loader)
+# [M] Init FAISS / metadata / SQLite
 # =========================
 async def init_db():
     global _FAISS_INDEX, _METADATA, _SQLITE_OK
@@ -747,7 +738,7 @@ async def init_db():
     else:
         logger.info("FAISS not available or index missing; continuing without FAISS.")
 
-    # METADATA (robust – understøtter din nuværende filstruktur)
+    # METADATA
     try:
         _METADATA = _load_metadata_files()
         if not _METADATA:
@@ -780,8 +771,9 @@ async def init_db():
     except Exception as e:
         logger.info(f"history load skipped: {e}")
 
+
 # =========================
-# Text helpers (used by SQLite functions)
+# [N] Text helpers (used by SQLite functions)
 # =========================
 def _strip_html(text: str) -> str:
     if not text:
@@ -790,9 +782,10 @@ def _strip_html(text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
-    
+
+
 # =========================
-# SQLite helpers (robust lookup på tværs af tabeller/kolonner)
+# [O] SQLite helpers
 # =========================
 async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[str] = None) -> str:
     if not _SQLITE_OK:
@@ -837,7 +830,6 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
         logger.exception(f"sqlite_latest_thread_plaintext failed: {e}")
         return ""
 
-# === Indlæs tråde som chunks ===
 async def sqlite_load_threads_as_chunks(limit:int=2000)->List[Dict[str,Any]]:
     if not _SQLITE_OK: return []
     out=[]
@@ -858,14 +850,7 @@ async def sqlite_load_threads_as_chunks(limit:int=2000)->List[Dict[str,Any]]:
     except Exception as e: logger.info(f"sqlite_load_threads_as_chunks: {e}")
     return out
 
-# === Udgående mails til tone (bruger messages + tickets + contacts) ===
 async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -> List[str]:
-    """
-    Finder korte uddrag fra nylige UD-GÅENDE beskeder til samme kontakt baseret på email.
-    Vi har ikke 'mail_outbox', så vi bruger:
-      contacts.email -> tickets.contactId -> messages (direction='out')
-    Fallback: hvis ingen match på email, returnér de seneste udgående beskeder generelt.
-    """
     if not _SQLITE_OK or not to_email:
         return []
 
@@ -876,7 +861,6 @@ async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -
         async with aiosqlite.connect(LOCAL_DB_PATH) as db:
             db.row_factory = aiosqlite.Row
 
-            # 1) Forsøg: find contactId via email og træk udgående beskeder fra alle vedkommendes tickets
             sql_by_email = """
                 SELECT m.plainText AS txt
                 FROM contacts c
@@ -898,7 +882,6 @@ async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -
                         if len(out) >= n:
                             break
 
-            # 2) Fallback: hvis intet via email, tag generelt de seneste udgående beskeder
             if len(out) < n:
                 sql_any_out = """
                     SELECT m.plainText AS txt
@@ -918,7 +901,6 @@ async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -
                             if len(out) >= n:
                                 break
 
-        # dedupliker på første ~120 tegn
         uniq: List[str] = []
         seen: set = set()
         for s in out:
@@ -934,10 +916,10 @@ async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -
         logger.info(f"sqlite_style_snippets (messages-based): {e}")
         return []
 
-# =========================
-# Text helpers
-# =========================
 
+# =========================
+# [P] Text helpers
+# =========================
 def _extract_text_from_meta(item: Any) -> str:
     if item is None:
         return ""
@@ -1006,7 +988,6 @@ def md_to_plain(md: str) -> str:
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
 
-# === NYT: De-identifikation af PII i kontekst ===
 def _deidentify(txt: str) -> str:
     if not txt:
         return txt
@@ -1017,7 +998,10 @@ def _deidentify(txt: str) -> str:
     s = re.sub(r"\b([A-ZÆØÅ][a-zæøå]{2,})(\s+[A-ZÆØÅ][a-zæøå]{2,}){0,2}\b", "[name]", s)
     return s
 
-# ===== Klinisk faktekstraktor =====
+
+# =========================
+# [Q] Klinisk faktekstraktor og boosters
+# =========================
 def extract_facts(text: str) -> Dict[str, Any]:
     t = (text or "").lower()
     facts = {
@@ -1056,7 +1040,10 @@ def build_query_boosters(facts: Dict[str, Any]) -> List[str]:
 def _label_join(meta: Dict[str, Any], text: str) -> str:
     return (_label_from_meta(meta) + "|" + (_strip_html(text)[:120])).lower()
 
-# ===== Embeddings + semantic rerank + MMR =====
+
+# =========================
+# [R] Embeddings + rerank + MMR
+# =========================
 @lru_cache(maxsize=4096)
 def _embed_cached(text: str) -> List[float]:
     from openai import OpenAI  # type: ignore
@@ -1113,11 +1100,11 @@ def mmr_select(query: str, items: List[Dict[str, Any]], lam: float, m: int) -> L
         logger.info(f"mmr_select fallback: {e}")
         return items[:m]
 
+
+# =========================
+# [S] Style hints & policy helpers
+# =========================
 def style_hint(mode: str, lang: str) -> str:
-    """
-    Returnerer en streng, der instruerer modellen i præcis outputformatering.
-    Understøtter: markdown | plain | tech_brief | mail
-    """
     mode = (mode or "markdown").lower()
 
     if lang == "da":
@@ -1135,7 +1122,6 @@ def style_hint(mode: str, lang: str) -> str:
         if mode == "plain":
             return "SVARFORMAT: Returnér samme indhold som normalt, men i ren tekst uden markdown, overskrifter eller emojis."
         if mode == "mail":
-            # Mail-skabelon på dansk — ingen 'Sources/Language' i brødteksten.
             return (
                 "MAILFORMAT (dansk): Svar som en færdig e-mail i REN TEKST (ingen markdown, ingen emojis). "
                 "Hold det kort, klinisk og kollegialt. Ingen 'Sources', 'Language' eller debug-felter i brødteksten.\n\n"
@@ -1157,7 +1143,7 @@ def style_hint(mode: str, lang: str) -> str:
                 "VIGTIGT: Brug kun information fra 'Relevant context'. Vær forsigtig med kategoriske ordinationer; "
                 "brug 'foreslår/kan overvejes' og angiv, at endelig plan afhænger af kliniske fund og compliance."
             )
-        return ""  # markdown (standard)
+        return ""  # markdown
     else:
         if mode == "tech_brief":
             return (
@@ -1172,7 +1158,6 @@ def style_hint(mode: str, lang: str) -> str:
         if mode == "plain":
             return "FORMAT: Same content as usual, but plain text only. No markdown."
         if mode == "mail":
-            # Mail-skabelon på engelsk
             return (
                 "MAIL FORMAT (English): Write a complete email in PLAIN TEXT (no markdown, no emojis). "
                 "Keep it concise, clinical, and collegial. Do NOT include 'Sources', 'Language', or debug fields in the body.\n\n"
@@ -1194,10 +1179,11 @@ def style_hint(mode: str, lang: str) -> str:
                 "IMPORTANT: Use only the 'Relevant context'. Avoid categorical prescriptions; "
                 "prefer 'suggest/consider' and note that the final plan depends on clinical findings and compliance."
             )
-        return ""  # markdown (standard)
+        return ""  # markdown
+
 
 # =========================
-# Q&A JSON search
+# [T] Q&A JSON search
 # =========================
 def _qa_log(msg: str):
     try:
@@ -1288,10 +1274,10 @@ def _qa_to_chunk(it: Dict[str, Any]) -> Dict[str, Any]:
     }
     return {"text": text, "meta": meta}
 
-# =========================
-# Retrieval helpers (generic metadata) + MAO helpers
-# =========================
 
+# =========================
+# [U] Retrieval helpers + MAO helpers
+# =========================
 def _get_meta_value(item: Dict[str, Any], key: str):
     if not isinstance(item, dict):
         return None
@@ -1370,8 +1356,9 @@ async def get_mao_top_chunks(query: str, k: int = 4) -> List[Dict[str, Any]]:
     scored.sort(key=lambda x: x[0], reverse=True)
     return [{"text": s[1], "meta": s[2]} for s in scored[:k]]
 
+
 # =========================
-# LLM translation & calls
+# [V] LLM translation & calls
 # =========================
 async def translate_to_english_if_needed(text: str, lang: str) -> str:
     if lang == "en" or not text:
@@ -1432,10 +1419,10 @@ def _openai_complete_blocking(final_prompt: str) -> str:
         logger.exception(f"OpenAI call failed: {e_modern}")
         return "I could not generate a response due to an internal error."
 
-# =========================
-# Policy helpers (stop-ordrer, mail-guidance, fallbacks)
-# =========================
 
+# =========================
+# [W] Policy helpers
+# =========================
 def stop_orders_block(lang: str) -> str:
     if lang == "da":
         return ("POLICY: Ingen adgangskoder/tokens/private links. Ingen patientnavne. "
@@ -1472,22 +1459,20 @@ def fallback_mail(lang: str, intent: str) -> str:
             "af udfordringen (fx tracking/rotation/åbent bid). Vi vender tilbage inden for 24 timer på hverdage.\n\n"
             "Venlig hilsen\nTandlæge Helle Hatt")
 
+
 # =========================
-# Endpoints
+# [X] Endpoints
 # =========================
 @app.get("/")
 async def health():
     return {"status": "ok", "qa_loaded": len(_QA_ITEMS), "metadata_loaded": len(_METADATA)}
 
-
 @app.post("/debug-token")
 async def debug_token(request: Request):
     return JSONResponse({"received_authorization": request.headers.get("authorization")})
 
-
 @app.post("/api/answer", dependencies=[Depends(require_rag_token)])
 async def api_answer(request: Request):
-    # 1) Parse body
     try:
         body = await request.json()
     except Exception as e:
@@ -1496,35 +1481,30 @@ async def api_answer(request: Request):
 
     logger.info(f"Incoming body keys: {list(body.keys()) if isinstance(body, dict) else type(body)}")
 
-    # Output mode
     output_mode = OUTPUT_MODE_DEFAULT
     if isinstance(body, dict) and "output_mode" in body:
         output_mode = str(body.get("output_mode") or OUTPUT_MODE_DEFAULT).lower()
 
-    # Extra optional fields
     from_email = (body.get("fromEmail") or "").strip().lower() if isinstance(body, dict) else ""
     subject = (body.get("subject") or "").strip() if isinstance(body, dict) else ""
     customer_name_hint = (body.get("contactName") or body.get("customerName") or "").strip()
 
-    # 2) Extract Zoho-style IDs first (preferred flow)
     user_text = ""
     ticket_id: Optional[str] = None
     contact_id: Optional[str] = None
-    lang: Optional[str] = None  # sæt først når vi har reel kundetekst
+    lang: Optional[str] = None
 
     if isinstance(body, dict):
         if "ticketId" in body and "question" in body:
             ticket_id = str(body.get("ticketId") or "").strip()
             contact_id = str(body.get("contactId") or "").strip() if body.get("contactId") else None
 
-            # 1) prøv direkte fra SQLite
             txt = await sqlite_latest_thread_plaintext(ticket_id, contact_id)
             if txt:
                 user_text = txt
                 logger.info("Zoho ID-only: pulled latest thread from SQLite.")
                 lang = detect_language(user_text)
             else:
-                # 2) hydrér (no-op hvis hydrator ikke findes), prøv igen
                 logger.info("SQLite tom for ticket %s – prøver Zoho hydrate...", ticket_id)
                 n = await _hydrate_thread_from_zoho(ticket_id)
                 logger.info("Zoho hydrate indlæste %s beskeder", n)
@@ -1539,7 +1519,6 @@ async def api_answer(request: Request):
                     user_text = str(body.get("question") or "").strip()
                     logger.warning("Ingen inbound efter hydrate – falder tilbage til 'question' feltet.")
 
-        # Fallbacks hvis ovenstående ikke gav noget
         if not user_text:
             for key_guess in ["plainText", "text", "message", "content", "body", "question"]:
                 if key_guess in body and isinstance(body[key_guess], str) and body[key_guess].strip():
@@ -1558,7 +1537,6 @@ async def api_answer(request: Request):
 
     logger.info(f"user_text(sample 300): {user_text[:300]}")
 
-    # Kortslut boilerplate
     is_boiler = (
         bool(re.search(r"please provide the best ai[- ]generated reply", (user_text or ""), re.I))
         or len((user_text or "").strip()) < 15
@@ -1566,13 +1544,11 @@ async def api_answer(request: Request):
 
     if is_boiler:
         customer_name = ""
-        # giv mulighed for navn fra payload
         for k in ("customerName","contactName","name"):
             if isinstance(body, dict) and isinstance(body.get(k), str) and body.get(k).strip():
                 customer_name = body[k].strip()
                 break
 
-        # Pæn kvitteringsmail i ren tekst (dansk)
         base = (
             "Subject: Tak for din besked\n\n"
             "Hej,\n\n"
@@ -1596,7 +1572,6 @@ async def api_answer(request: Request):
             "message": {"content": answer, "language": "da"}
         }
 
-    # 3) Language + Role + Intent + Prompt
     if not lang:
         lang = detect_language(user_text)
 
@@ -1604,17 +1579,13 @@ async def api_answer(request: Request):
     role_disp = role_label(lang, role)
     intent = detect_intent(user_text, lang)
 
-    # Auto-select mail for status/admin if caller didn't force a mode
     if intent in ("status_request", "admin") and not (isinstance(body, dict) and "output_mode" in body):
         output_mode = "mail"
 
-    # choose system prompt
     system_prompt = make_customer_system_prompt(lang) if intent in ("status_request", "admin") else make_system_prompt(lang, role)
 
-    # Extract brand/case
     brand_case = extract_brand_and_case(subject, user_text) if os.getenv("BRAND_ENABLE","1") == "1" else {"brand": None, "caseId": None}
 
-    # 4) Cross-lingual retrieval + facts
     retrieval_query = await translate_to_english_if_needed(user_text, lang)
     if retrieval_query != user_text:
         logger.info("Query translated to English for retrieval.")
@@ -1624,22 +1595,18 @@ async def api_answer(request: Request):
     boosters = build_query_boosters(facts)
     boosted_query = (retrieval_query + " " + " ".join(boosters)).strip()
 
-    # --- Q&A hits (stort K) ---
     qa_items = search_qa_json(boosted_query, k=RETR_K)
     qa_hits_raw = [_qa_to_chunk(x) for x in qa_items]
 
-    # --- MAO via anchors fra Q&A refs ---
     qa_refs = [aid for it in qa_items for aid in (it.get("refs") or []) if isinstance(aid, str) and aid.startswith("MAO:")]
     mao_ref_hits_raw = find_mao_by_anchors(qa_refs, k_per_anchor=2) if qa_refs else []
 
-    # --- metadata fallback (MAO keyword) ---
     mao_kw_hits_raw = []
     try:
         mao_kw_hits_raw = await get_mao_top_chunks(boosted_query, k=max(4, RETR_K//3))
     except Exception as e:
         logger.info(f"MAO keyword retrieval failed: {e}")
 
-    # Merge kandidater, dedup, semantisk rerank, MMR-diversitet
     cands = qa_hits_raw + mao_ref_hits_raw + mao_kw_hits_raw
     seen = set(); uniq=[]
     for c in cands:
@@ -1652,7 +1619,6 @@ async def api_answer(request: Request):
     sem_top = semantic_rerank(boosted_query, uniq, topk=RERANK_TOPK)
     diversified = mmr_select(boosted_query, sem_top, lam=MMR_LAMBDA, m=min(8, len(sem_top)))
 
-    # --- historical tone/content (NYT: prioriter ved match) ---
     history_hits = []
     if ticket_id:
         hist = await sqlite_latest_thread_plaintext(ticket_id, contact_id)
@@ -1676,7 +1642,6 @@ async def api_answer(request: Request):
 
     combined_chunks = history_primary + diversified if history_primary else diversified + history_hits
 
-    # 5) Failsafe if no context at all
     if not combined_chunks:
         fb = fallback_mail(lang, intent) if intent in ("status_request","admin","clinical_support") else ""
         answer = fb or (
@@ -1684,7 +1649,6 @@ async def api_answer(request: Request):
             "1) Screening/diagnose → 2) Plan (staging, IPR, attachments) → 3) Start → 4) Kontroller/tracking → 5) Refinement → 6) Retention.\n"
             "Næste skridt: indlæs flere kildedata i RAG for mere målrettet svar."
         )
-        # Navnehilsen hvis muligt
         if lang == "da":
             answer = _inject_greeting(answer, customer_name_hint, "da")
         return {
@@ -1699,17 +1663,14 @@ async def api_answer(request: Request):
             "message": {"content": answer, "language": lang}
         }
 
-    # Context text (NYT: de-identificér)
     def _clip(txt: str, max_len: int = 1200) -> str:
         return (txt[:max_len] + "…") if len(txt) > max_len else txt
 
     context = "\n\n".join(_clip(_deidentify(text_of(ch))) for ch in combined_chunks)[:9000]
 
-    # 6) Compose final prompt
     style = style_hint(output_mode, lang)
     policy_block = stop_orders_block(lang)
 
-    # style seed fra SQLite historik til samme kunde (kun hvis vi har en email)
     use_style = bool(from_email and "@" in from_email)
     snippets = await sqlite_style_snippets(from_email, n=int(os.getenv("STYLE_SNIPPETS_N","4"))) if use_style else []
     style_seed = "\n\n".join(f"— {s}" for s in snippets) if snippets else ""
@@ -1727,7 +1688,6 @@ async def api_answer(request: Request):
     if facts.get("open_bite") or facts.get("deep_bite") or facts.get("crowding_mm") is None:
         evidence_policy += "• For space management (IPR/distal/expansion): require Bolton analysis or explicitly mark it as pending.\n"
 
-    # Hvis kunden skriver "Hej Helle" til os, hold vores hilsen neutral
     def _guess_greeting_target(txt: str) -> str:
         t = (txt or "").lower().strip()
         if t.startswith(("hej helle", "dear helle", "hej, helle")):
@@ -1756,7 +1716,6 @@ async def api_answer(request: Request):
     )
     logger.info(f"final_prompt(sample 400): {final_prompt[:400]}")
 
-    # 7) LLM
     try:
         answer_markdown = await get_rag_answer(final_prompt)
     except Exception as e:
@@ -1769,7 +1728,6 @@ async def api_answer(request: Request):
     answer_plain = md_to_plain(answer_markdown)
     answer_out = answer_plain if output_mode in ("plain", "tech_brief", "mail") else answer_markdown
 
-    # 8) Sources
     sources = []
     for ch in combined_chunks[:6]:
         meta = ch.get("meta", {}) if isinstance(ch, dict) else {}
@@ -1782,16 +1740,13 @@ async def api_answer(request: Request):
             src["anchor_id"] = meta.get("anchor_id") or meta.get("anchorId")
         sources.append(src)
 
-    # Navnehilsen for mails/plain på dansk (undgå “Hej Helle” når kunden skrev til Helle)
     if lang == "da" and output_mode in ("mail", "plain"):
         if greet_mode == "to_helle":
-            # hvis model skulle have skrevet "Hej Helle", neutralisér
             if answer_out.strip().lower().startswith("hej helle"):
                 answer_out = "Hej,\n\n" + answer_out.strip()[len("Hej Helle,"):].lstrip()
         else:
             answer_out = _inject_greeting(answer_out, customer_name_hint, "da")
 
-    # Skjul kilder i mails hvis ønsket
     if os.getenv("MAIL_HIDE_SOURCES","1") == "1" and output_mode == "mail":
         sources = []
 
@@ -1807,17 +1762,19 @@ async def api_answer(request: Request):
         "message": {"content": answer_out, "language": lang}
     }
 
-
-# --- Legacy shim (tving gamle klienter ind på det nye endpoint) ---
-# VIGTIGT: Sørg for, at du ikke har en anden @app.post("/answer") i filen.
+# Legacy shim
 @app.post("/answer", dependencies=[Depends(require_rag_token)])
 async def legacy_answer_proxy(request: Request):
-    # Ingen særlogik. Videresend 1:1 til det nye endpoint.
     return await api_answer(request)
-
 
 @app.post("/update_ticket")
 async def noop_update_ticket():
-    # Hvis Zoho rammer et gammelt endpoint, svar pænt 200
     return {"status": "noop"}
 
+
+# =========================
+# [Y] VIGTIGT: Importér routers TIL SIDST
+# =========================
+from app.routers import admin_sync, chat
+app.include_router(admin_sync.router)  # prefix defineres inde i router-filerne
+app.include_router(chat.router)
