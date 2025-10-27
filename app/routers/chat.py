@@ -1,10 +1,13 @@
 # app/routers/chat.py
-import os, hashlib, hmac, uuid
+import os
+import hashlib
+import hmac
+import uuid
 from typing import Optional
 from datetime import datetime
 
 import aiosqlite
-from fastapi import APIRouter, HTTPException, Header, Request
+from fastapi import APIRouter, HTTPException, Request
 
 # Importer helpers fra app/__init__.py (samme som før)
 from app import (
@@ -17,111 +20,141 @@ from app import (
 
 ENABLE = os.getenv("AI_CHAT_ENABLE", "1") == "1"
 DB_PATH = os.getenv("LOCAL_DB_PATH", "/data/rag.sqlite3")
-PUBLIC_SECRET_ENV = os.getenv("RAG_PUBLIC_SECRET", "")
+
+# ======================================================
+# 1) Kolonne-map (peg kode mod dine rigtige felter)
+# ======================================================
+# chat schema mapping to existing DB
+COL_SESSION_ID = "id"              # var 'session_id'
+COL_EMAIL      = "contact_email"   # var 'user_email'
+COL_STATUS     = "status"
+COL_TOKEN_HASH = "token_hash"
+COL_CREATED_AT = "created_at"
 
 # FastAPI router
 router = APIRouter(prefix="/chat", tags=["chat-public"])
 
-def _hash_token(tok: str) -> str:
-    return hashlib.sha256(tok.encode()).hexdigest()
+# Hemmelighed til offentlig signatur
+PUBLIC_SECRET = (os.getenv("RAG_PUBLIC_SECRET") or "").encode("utf-8")
 
-def _require_secret_bytes() -> bytes:
-    if not PUBLIC_SECRET_ENV:
-        # 500 = serverkonfig fejl
-        raise HTTPException(status_code=500, detail="server secret not set")
-    return PUBLIC_SECRET_ENV.encode()
 
-async def _require_session(token: Optional[str]) -> dict:
-    """
-    Validerer chat-token mod RAG_PUBLIC_SECRET og 003-chat_sessions
-    (session_id TEXT PK, status TEXT='active' når session er åben)
-    """
-    if not token:
-        raise HTTPException(status_code=401, detail="missing token")
+# ======================================================
+# Token utils (sign, verify, hash)
+# ======================================================
+def _sign_token(sid: str) -> str:
+    if not PUBLIC_SECRET:
+        raise HTTPException(status_code=500, detail="server misconfigured (no RAG_PUBLIC_SECRET)")
+    sig = hmac.new(PUBLIC_SECRET, sid.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    return f"{sid}.{sig}"
 
-    secret = _require_secret_bytes()
-    # token format: "<session_id>.<sig>"
+def _verify_token(sid: str, token: str) -> bool:
+    if not token or "." not in token or not PUBLIC_SECRET:
+        return False
     try:
-        sid, sig = token.split(".", 1)
+        t_sid, t_sig = token.split(".", 1)
     except ValueError:
-        raise HTTPException(status_code=401, detail="bad token")
+        return False
+    if t_sid != sid:
+        return False
+    expect = hmac.new(PUBLIC_SECRET, sid.encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+    return hmac.compare_digest(t_sig, expect)
 
-    good = hmac.new(secret, sid.encode(), hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(good[:32], sig[:32]):  # kort sammenligning er nok
-        raise HTTPException(status_code=401, detail="bad signature")
+def _hash_token(tok: str) -> str:
+    return hashlib.sha256(tok.encode("utf-8")).hexdigest()
 
-    # Verificér i DB ifølge 003-skemaet
+
+# ======================================================
+# 2) Session-checker: brug id + kolonne-map
+# ======================================================
+async def _require_session(sid: str):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT session_id, status FROM chat_sessions WHERE session_id=? LIMIT 1",
-            (sid,)
-        ) as cur:
+        sql = f"""
+            SELECT {COL_SESSION_ID} AS sid, {COL_STATUS} AS status
+            FROM chat_sessions
+            WHERE {COL_SESSION_ID}=?
+            LIMIT 1
+        """
+        async with db.execute(sql, (sid,)) as cur:
             row = await cur.fetchone()
-
     if not row:
         raise HTTPException(status_code=404, detail="session not found")
-    if (row["status"] or "").lower() != "active":
+    if (row["status"] or "").lower() not in ("active", "open"):
         raise HTTPException(status_code=409, detail="session closed")
 
-    return {"session_id": sid}
 
+# ======================================================
+# 3) /chat/start: indsæt i dine rigtige kolonner
+# ======================================================
 @router.post("/start")
-async def start_session(request: Request):
+async def start_session(payload: dict):
     if not ENABLE:
         raise HTTPException(status_code=503, detail="chat disabled")
 
-    # Body (valgfri)
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
+    email = (payload.get("email") or "").strip().lower() if isinstance(payload, dict) else ""
+    if not email:
+        raise HTTPException(status_code=400, detail="missing email")
+    if not PUBLIC_SECRET:
+        raise HTTPException(status_code=500, detail="server misconfigured (no RAG_PUBLIC_SECRET)")
 
-    clinic_id = (body.get("clinicId") or "").strip() if isinstance(body, dict) else ""
-    email     = (body.get("email") or "").strip().lower() if isinstance(body, dict) else ""
+    sid   = uuid.uuid4().hex
+    token = _sign_token(sid)
+    now   = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Token opbygning
-    _ = _require_secret_bytes()  # fail fast hvis secret ikke sat
-    sid = uuid.uuid4().hex
-    sig = hmac.new(_.strip(), sid.encode(), hashlib.sha256).hexdigest()[:32]
-    token = f"{sid}.{sig}"
-
-    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    # 003: chat_sessions(session_id, user_email, status, created_at, updated_at, token_hash)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            """
-            INSERT INTO chat_sessions(session_id, user_email, status, created_at, updated_at, token_hash)
-            VALUES(?, ?, 'active', ?, ?, ?)
+            f"""
+            INSERT INTO chat_sessions({COL_SESSION_ID}, {COL_EMAIL}, {COL_STATUS}, {COL_CREATED_AT}, {COL_TOKEN_HASH})
+            VALUES(?, ?, 'active', ?, ?)
             """,
-            (sid, email, now, now, _hash_token(token))
+            (sid, email, now, _hash_token(token))
         )
-        # Hvis du også vil gemme clinic_id et sted, kræver det en kolonne i 003.
         await db.commit()
 
     return {"sessionId": sid, "token": token}
 
+
+# ======================================================
+# 4) /chat/message: læs token fra header, match på id
+#    Verificér signatur, tjek hash i DB, og kør RAG
+# ======================================================
 @router.post("/message")
-async def chat_message(request: Request, x_chat_token: Optional[str] = Header(default=None)):
+async def chat_message(request: Request):
     if not ENABLE:
         raise HTTPException(status_code=503, detail="chat disabled")
-
-    sess = await _require_session(x_chat_token)
 
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="invalid json")
 
+    sid  = (body.get("sessionId") or "").strip()
     text = (body.get("text") or "").strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="empty text")
+    if not sid or not text:
+        raise HTTPException(status_code=400, detail="missing sessionId or text")
 
-    sid = sess["session_id"]
+    token = request.headers.get("X-Chat-Token") or ""
+    if not _verify_token(sid, token):
+        raise HTTPException(status_code=401, detail="bad token")
+
+    # tjek at session findes og er aktiv
+    await _require_session(sid)
+
+    # valider at token matcher hash i DB (ekstra sikkerhed)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        sql = f"SELECT {COL_TOKEN_HASH} AS th FROM chat_sessions WHERE {COL_SESSION_ID}=? LIMIT 1"
+        async with db.execute(sql, (sid,)) as cur:
+            row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="session not found")
+    if row["th"] and row["th"] != _hash_token(token):
+        raise HTTPException(status_code=401, detail="bad token")
+
+    # ——— resten af din RAG-logik ———
     now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Gem user-besked (003: created_at NOT NULL)
+    # Gem user-besked
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "INSERT INTO chat_messages(session_id, role, content, created_at) VALUES(?,?,?,?)",
@@ -143,7 +176,6 @@ async def chat_message(request: Request, x_chat_token: Optional[str] = Header(de
         "You respond to a dentist/orthodontist via a public chat. Be concise, specific, and ask only for info needed."
     )
 
-    # Retrieval: Q&A + MAO keyword
     boosted_query = text
     qa_items = search_qa_json(boosted_query, k=20)
     qa_hits = [_qa_to_chunk(x) for x in qa_items]
@@ -194,7 +226,7 @@ async def chat_message(request: Request, x_chat_token: Optional[str] = Header(de
             "Sorry, internal error."
         )
 
-    # Gem assistant-besked (003: created_at NOT NULL)
+    # Gem assistant-besked
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "INSERT INTO chat_messages(session_id, role, content, created_at) VALUES(?,?,?,?)",
@@ -209,14 +241,20 @@ async def chat_message(request: Request, x_chat_token: Optional[str] = Header(de
         "language": lang
     }
 
+
+# Historik: vi lader denne være som før (kræver stadig token-header i praksis
+# gennem din frontend-flow, men session-validering sker nu via /message-logikken)
 @router.get("/history/{session_id}")
-async def chat_history(session_id: str, x_chat_token: Optional[str] = Header(default=None)):
-    # Kræv gyldig session/token
-    await _require_session(x_chat_token)
+async def chat_history(session_id: str, request: Request):
+    # Valgfrit: kræv token der matcher session_id
+    token = request.headers.get("X-Chat-Token") or ""
+    if not _verify_token(session_id, token):
+        raise HTTPException(status_code=401, detail="bad token")
+
+    await _require_session(session_id)
 
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        # Stabil sortering efter id (003 har autoincrement)
         async with db.execute(
             "SELECT role, content, created_at FROM chat_messages WHERE session_id=? ORDER BY id ASC",
             (session_id,)
