@@ -1818,24 +1818,24 @@ async def api_answer(request: Request):
             src["anchor_id"] = meta.get("anchor_id") or meta.get("anchorId")
         sources.append(src)
 
-# Normaliser hilsen, hvis kunden skriver "Hej Helle" men vi svarer generisk
-if lang == "da" and output_mode in ("mail", "plain"):
-    low = answer_out.strip().lower()
-    trimmed = answer_out.strip()
-    if greet_mode == "to_helle":
-        if low.startswith("hej helle"):
-            cut = "hej helle,"
-            if trimmed[:len(cut)].lower() == cut:
-                answer_out = "Hej,\n\n" + trimmed[len(cut):].lstrip()
-            else:
-                cut2 = "hej helle"
-                answer_out = "Hej,\n\n" + trimmed[len(cut2):].lstrip()
-    else:
-        # Hvis vi har et kundenavn-hint, så læg en venlig hilsen på
-        answer_out = _inject_greeting(answer_out, customer_name_hint, "da")
+    # Normaliser hilsen, hvis kunden skriver "Hej Helle" men vi svarer generisk
+    if lang == "da" and output_mode in ("mail", "plain"):
+        low = answer_out.strip().lower()
+        trimmed = answer_out.strip()
+        if greet_mode == "to_helle":
+            if low.startswith("hej helle"):
+                cut = "hej helle,"
+                if trimmed[:len(cut)].lower() == cut:
+                    answer_out = "Hej,\n\n" + trimmed[len(cut):].lstrip()
+                else:
+                    cut2 = "hej helle"
+                    answer_out = "Hej,\n\n" + trimmed[len(cut2):].lstrip()
+        else:
+            # Hvis vi har et kundenavn-hint, så læg en venlig hilsen på
+            answer_out = _inject_greeting(answer_out, customer_name_hint, "da")
 
-    if os.getenv("MAIL_HIDE_SOURCES","1") == "1" and output_mode == "mail":
-        sources = []
+        if os.getenv("MAIL_HIDE_SOURCES", "1") == "1" and output_mode == "mail":
+            sources = []
 
     return {
         "finalAnswer": answer_out,
