@@ -57,6 +57,8 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
               approved_at TEXT
             )
         """)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_status_id ON moderation_queue(status, id)")
+
         await db.execute(
             """INSERT INTO moderation_queue
                (created_at,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,model_answer,editor_answer)
@@ -104,6 +106,23 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
     if not mid:
         raise HTTPException(status_code=400, detail="missing id")
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE moderation_queue SET status='approved', approved_by=?, approved_at=? WHERE id=?", (who, when, mid))
+        db.row_factory = aiosqlite.Row
+        # 1) find status
+        async with db.execute("SELECT status FROM moderation_queue WHERE id=?", (mid,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="not found")
+        if (row["status"] or "").lower() == "approved":
+            raise HTTPException(status_code=409, detail="already approved")
+        # 2) update
+        await db.execute(
+            "UPDATE moderation_queue SET status='approved', approved_by=?, approved_at=? WHERE id=?",
+            (who, when, mid)
+        )
+        # 3) hent final tekst til frontend UX
+        async with db.execute("SELECT editor_answer FROM moderation_queue WHERE id=?", (mid,)) as cur:
+            row2 = await cur.fetchone()
         await db.commit()
-    return {"ok": True}
+    final = (row2["editor_answer"] if row2 else "") or ""
+    return {"ok": True, "final": final}
+
