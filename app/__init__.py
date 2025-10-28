@@ -372,9 +372,12 @@ async def on_startup():
         # --- Migrations: soft-fail i produktion ---
         try:
             logger.info("Running DB migrations...")
-            await run_migrations()
+            if asyncio.iscoroutinefunction(run_migrations):
+                await run_migrations()
+            else:
+                await asyncio.to_thread(run_migrations)
             logger.info("DB migrations complete.")
-        except Exception as e:
+        except Exception:
             logger.exception("Migration failed; continuing without schema changes")
 
         # --- ensure UI log table exists ---
@@ -779,14 +782,14 @@ async def init_db():
 
     # SQLite ping
     try:
-        if os.path.exists(LOCAL_DB_PATH):
-            async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+        if os.path.exists(DB_PATH):
+            async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute("SELECT 1")
             _SQLITE_OK = True
-            logger.info(f"SQLite available at {LOCAL_DB_PATH}")
+            logger.info(f"SQLite available at {DB_PATH}")
         else:
             _SQLITE_OK = False
-            logger.info(f"SQLite path not found: {LOCAL_DB_PATH} (continuing)")
+            logger.info(f"SQLite path not found: {DB_PATH} (continuing)")
     except Exception as e:
         _SQLITE_OK = False
         logger.exception(f"SQLite check failed: {e}")
@@ -830,7 +833,7 @@ async def sqlite_latest_thread_plaintext(ticket_id: str, contact_id: Optional[st
     contact_cols= ["contactId","contact_id","cid","contact"]
     time_cols   = ["createdTime","createdAt","created_at","timestamp","date","time"]
     try:
-        async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT name FROM sqlite_master WHERE type='table'") as c:
                 tables=[r["name"] async for r in c]
@@ -864,7 +867,7 @@ async def sqlite_load_threads_as_chunks(limit:int=2000)->List[Dict[str,Any]]:
     if not _SQLITE_OK: return []
     out=[]
     try:
-        async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory=aiosqlite.Row
             sql="""SELECT m.plainText AS txt,m.ticketId,t.contactId,t.subject,c.email
                    FROM messages m
@@ -888,7 +891,7 @@ async def sqlite_style_snippets(to_email: str, n: int = 4, min_len: int = 120) -
     out: List[str] = []
 
     try:
-        async with aiosqlite.connect(LOCAL_DB_PATH) as db:
+        async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
 
             sql_by_email = """
@@ -1530,6 +1533,22 @@ async def ui_log(request: Request):
         logger.exception("ui_log insert failed: %s", e)
         raise HTTPException(status_code=500, detail="log write failed")
 
+@app.get("/debug/ui-log")
+async def ui_log_tail(n: int = 20):
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT created_at, kind, session_id, email, substr(text,1,200) AS text "
+                "FROM chat_frontend_log ORDER BY id DESC LIMIT ?",
+                (max(1, min(n, 200)),)
+            ) as cur:
+                rows = [dict(r) for r in await cur.fetchall()]
+        return {"ok": True, "rows": rows}
+    except Exception as e:
+        logger.exception("ui_log tail failed: %s", e)
+        raise HTTPException(status_code=500, detail="log read failed")
+
 @app.post("/api/answer", dependencies=[Depends(require_rag_token)])
 async def api_answer(request: Request):
     try:
@@ -1800,11 +1819,18 @@ async def api_answer(request: Request):
         sources.append(src)
 
     if lang == "da" and output_mode in ("mail", "plain"):
-        if greet_mode == "to_helle":
-            if answer_out.strip().lower().startswith("hej helle"):
-                answer_out = "Hej,\n\n" + answer_out.strip()[len("Hej Helle,"):].lstrip()
-        else:
-            answer_out = _inject_greeting(answer_out, customer_name_hint, "da")
+            if greet_mode == "to_helle":
+        low = answer_out.strip().lower()
+        trimmed = answer_out.strip()
+        if low.startswith("hej helle"):
+            cut = "hej helle,"
+            if trimmed[:len(cut)].lower() == cut:
+                answer_out = "Hej,\n\n" + trimmed[len(cut):].lstrip()
+            else:
+                cut2 = "hej helle"
+                answer_out = "Hej,\n\n" + trimmed[len(cut2):].lstrip()
+    else:
+        answer_out = _inject_greeting(answer_out, customer_name_hint, "da")
 
     if os.getenv("MAIL_HIDE_SOURCES","1") == "1" and output_mode == "mail":
         sources = []
