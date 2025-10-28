@@ -19,11 +19,12 @@ def _auth(creds: HTTPAuthorizationCredentials):
 DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3")
 
 async def _ensure_schema(db):
+    # 1) Opret tabel hvis den ikke findes
     await db.execute("""
         CREATE TABLE IF NOT EXISTS moderation_queue(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           created_at TEXT NOT NULL,
-          status TEXT NOT NULL,                 -- pending | approved
+          status TEXT NOT NULL,
           session_id TEXT,
           ticket_id TEXT,
           contact_id TEXT,
@@ -34,11 +35,28 @@ async def _ensure_schema(db):
           model_answer TEXT,
           editor_answer TEXT,
           approved_by TEXT,
-          approved_at TEXT,
-          final_public TEXT                     -- spejl af det godkendte svar til offentlig visning
+          approved_at TEXT
+          -- bemærk: ingen final_public her; den tilføjes via migration nedenfor
         )
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_status_id ON moderation_queue(status, id)")
+
+    # 2) Migration: tilføj manglende kolonner dynamisk
+    async def has_col(name: str) -> bool:
+        async with db.execute("PRAGMA table_info('moderation_queue')") as cur:
+            async for r in cur:
+                if (r[1] or "").lower() == name.lower():
+                    return True
+        return False
+
+    # final_public til offentlig visning
+    if not await has_col("final_public"):
+        await db.execute("ALTER TABLE moderation_queue ADD COLUMN final_public TEXT")
+    # language hvis vi senere vil gemme sprog (ufarligt at have den med)
+    if not await has_col("language"):
+        await db.execute("ALTER TABLE moderation_queue ADD COLUMN language TEXT")
+
+    # ingen commit her; kalderen committer efter opdatering/insert
 
 @router.post("/intake")
 async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
@@ -53,6 +71,7 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
     contact_name = (body.get("contactName") or body.get("customerName") or "").strip()
     subject      = (body.get("subject") or "").strip()
     user_text    = (body.get("question") or body.get("text") or "").strip()
+    language     = (body.get("lang") or "").strip().lower()
 
     if not user_text:
         raise HTTPException(status_code=400, detail="missing user text")
@@ -63,9 +82,9 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
         await _ensure_schema(db)
         cur = await db.execute(
             """INSERT INTO moderation_queue
-               (created_at,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,model_answer,editor_answer,final_public)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (when,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,"","", "")
+               (created_at,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,model_answer,editor_answer,final_public,language)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (when,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,"","", "", language)
         )
         await db.commit()
         mid = cur.lastrowid or 0
