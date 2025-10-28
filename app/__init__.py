@@ -1862,11 +1862,9 @@ async def noop_update_ticket():
 # =========================
 # [Y] VIGTIGT: Importér routers TIL SIDST
 # =========================
-from app.routers import admin_sync, chat
+from app.routers import admin_sync, chat, mod
+
 app.include_router(admin_sync.router)  # prefix defineres inde i router-filerne
 app.include_router(chat.router)
-from app.routers import admin_sync, chat, moderation
-app.include_router(admin_sync.router)
-app.include_router(chat.router)
-app.include_router(moderation.router)
-app.include_router(mod.router)
+app.include_router(mod.router)         # <- moderation-køen
+
