@@ -1,6 +1,6 @@
-# app/routers/mod.py (kun relevante bider)
+# app/routers/mod.py
 from fastapi import APIRouter, HTTPException, Request, Depends
-import aiosqlite, os, json
+import aiosqlite, os
 from datetime import datetime
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import hmac
@@ -16,57 +16,60 @@ def _auth(creds: HTTPAuthorizationCredentials):
     if not hmac.compare_digest(creds.credentials.strip(), RAG_BEARER_TOKEN.strip()):
         raise HTTPException(status_code=403, detail="Bad token")
 
-DB_PATH = os.getenv("LOCAL_DB_PATH", "/data/rag.sqlite3")
+DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3")
+
+async def _ensure_schema(db):
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS moderation_queue(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          created_at TEXT NOT NULL,
+          status TEXT NOT NULL,                 -- pending | approved
+          session_id TEXT,
+          ticket_id TEXT,
+          contact_id TEXT,
+          from_email TEXT,
+          contact_name TEXT,
+          subject TEXT,
+          user_text TEXT,
+          model_answer TEXT,
+          editor_answer TEXT,
+          approved_by TEXT,
+          approved_at TEXT,
+          final_public TEXT                     -- spejl af det godkendte svar til offentlig visning
+        )
+    """)
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_status_id ON moderation_queue(status, id)")
 
 @router.post("/intake")
 async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
     body = await request.json()
     when = datetime.utcnow().isoformat() + "Z"
-    # Standardiser felter
-    session_id  = (body.get("sessionId") or "").strip()
-    ticket_id   = (body.get("ticketId") or "").strip()
-    contact_id  = (body.get("contactId") or "").strip()
-    from_email  = (body.get("fromEmail") or "").strip().lower()
-    contact_name= (body.get("contactName") or body.get("customerName") or "").strip()
-    subject     = (body.get("subject") or "").strip()
-    user_text   = (body.get("question") or body.get("text") or "").strip()
+
+    session_id   = (body.get("sessionId") or "").strip()
+    ticket_id    = (body.get("ticketId") or "").strip()
+    contact_id   = (body.get("contactId") or "").strip()
+    from_email   = (body.get("fromEmail") or "").strip().lower()
+    contact_name = (body.get("contactName") or body.get("customerName") or "").strip()
+    subject      = (body.get("subject") or "").strip()
+    user_text    = (body.get("question") or body.get("text") or "").strip()
 
     if not user_text:
         raise HTTPException(status_code=400, detail="missing user text")
 
-    # status SKAL være 'pending'
     status = "pending"
 
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS moderation_queue(
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              created_at TEXT NOT NULL,
-              status TEXT NOT NULL,
-              session_id TEXT,
-              ticket_id TEXT,
-              contact_id TEXT,
-              from_email TEXT,
-              contact_name TEXT,
-              subject TEXT,
-              user_text TEXT,
-              model_answer TEXT,
-              editor_answer TEXT,
-              approved_by TEXT,
-              approved_at TEXT
-            )
-        """)
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_status_id ON moderation_queue(status, id)")
-
-        await db.execute(
+        await _ensure_schema(db)
+        cur = await db.execute(
             """INSERT INTO moderation_queue
-               (created_at,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,model_answer,editor_answer)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (when,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,"","")
+               (created_at,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,model_answer,editor_answer,final_public)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (when,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,"","", "")
         )
         await db.commit()
-    return {"ok": True, "status": status}
+        mid = cur.lastrowid or 0
+    return {"ok": True, "status": status, "id": mid}
 
 @router.get("/queue")
 async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
@@ -81,6 +84,7 @@ async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPA
     rows=[]
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+        await _ensure_schema(db)
         async with db.execute(q, tuple(args)) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
     return {"ok": True, "rows": rows}
@@ -90,11 +94,8 @@ async def mod_item(mid: int, credentials: HTTPAuthorizationCredentials = Depends
     _auth(credentials)
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("""
-            SELECT id, created_at, status, from_email, contact_name, subject,
-                   user_text, model_answer, editor_answer, approved_by, approved_at
-            FROM moderation_queue WHERE id=?
-        """, (mid,)) as cur:
+        await _ensure_schema(db)
+        async with db.execute("SELECT * FROM moderation_queue WHERE id=?", (mid,)) as cur:
             row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="not found")
@@ -108,6 +109,7 @@ async def mod_save(payload: dict, credentials: HTTPAuthorizationCredentials = De
     if not mid:
         raise HTTPException(status_code=400, detail="missing id")
     async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_schema(db)
         await db.execute("UPDATE moderation_queue SET editor_answer=? WHERE id=?", (txt, mid))
         await db.commit()
     return {"ok": True}
@@ -122,22 +124,34 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
         raise HTTPException(status_code=400, detail="missing id")
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        # 1) find status
-        async with db.execute("SELECT status FROM moderation_queue WHERE id=?", (mid,)) as cur:
+        await _ensure_schema(db)
+        # 1) find status + tekst
+        async with db.execute("SELECT status, editor_answer FROM moderation_queue WHERE id=?", (mid,)) as cur:
             row = await cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="not found")
         if (row["status"] or "").lower() == "approved":
             raise HTTPException(status_code=409, detail="already approved")
-        # 2) update
-        await db.execute(
-            "UPDATE moderation_queue SET status='approved', approved_by=?, approved_at=? WHERE id=?",
-            (who, when, mid)
-        )
-        # 3) hent final tekst til frontend UX
-        async with db.execute("SELECT editor_answer FROM moderation_queue WHERE id=?", (mid,)) as cur:
-            row2 = await cur.fetchone()
-        await db.commit()
-    final = (row2["editor_answer"] if row2 else "") or ""
-    return {"ok": True, "final": final}
+        final_text = (row["editor_answer"] or "").strip()
 
+        # 2) update (status + final_public spejl)
+        await db.execute(
+            "UPDATE moderation_queue SET status='approved', approved_by=?, approved_at=?, final_public=? WHERE id=?",
+            (who, when, final_text, mid)
+        )
+        await db.commit()
+    return {"ok": True, "final": final_text, "id": mid}
+
+# Offentlig, uden token: bruges af kundesiden til at hente godkendt svar
+@router.get("/public")
+async def mod_public(id: int):
+    if not id:
+        raise HTTPException(status_code=400, detail="missing id")
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await _ensure_schema(db)
+        async with db.execute("SELECT status, final_public FROM moderation_queue WHERE id=?", (id,)) as cur:
+            row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "status": row["status"], "answer": row["final_public"] or ""}
