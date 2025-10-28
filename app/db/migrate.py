@@ -1,6 +1,7 @@
+# app/db/migrate.py
 import os, asyncio, aiosqlite, glob
 
-DB_PATH = os.getenv("SQLITE_PATH", "/data/rag.sqlite3")
+DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3")  # ensartet med app
 MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")
 
 async def run_migrations():
@@ -11,14 +12,17 @@ async def run_migrations():
         )
         await db.commit()
 
-        for path in sorted(glob.glob(os.path.join(MIGRATIONS_DIR, "*.sql"))):
+        for path in sorted(glob.glob(os.path.join(MIGRATIONS_DIR, '*.sql'))):
             version = os.path.splitext(os.path.basename(path))[0]
             async with db.execute("SELECT 1 FROM schema_migrations WHERE version=?", (version,)) as cur:
                 row = await cur.fetchone()
             if row:
                 continue
-
             with open(path, "r", encoding="utf-8") as f:
                 sql = f.read()
             await db.executescript(sql)
+            await db.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES(?, datetime('now'))",
+                (version,),
+            )
             await db.commit()
