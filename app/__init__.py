@@ -1865,3 +1865,7 @@ async def noop_update_ticket():
 from app.routers import admin_sync, chat
 app.include_router(admin_sync.router)  # prefix defineres inde i router-filerne
 app.include_router(chat.router)
+from app.routers import admin_sync, chat, moderation
+app.include_router(admin_sync.router)
+app.include_router(chat.router)
+app.include_router(moderation.router)
