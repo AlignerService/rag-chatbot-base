@@ -85,6 +85,21 @@ async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPA
             rows = [dict(r) for r in await cur.fetchall()]
     return {"ok": True, "rows": rows}
 
+@router.get("/item/{mid}")
+async def mod_item(mid: int, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+    _auth(credentials)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT id, created_at, status, from_email, contact_name, subject,
+                   user_text, model_answer, editor_answer, approved_by, approved_at
+            FROM moderation_queue WHERE id=?
+        """, (mid,)) as cur:
+            row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"ok": True, "item": dict(row)}
+
 @router.post("/save")
 async def mod_save(payload: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
