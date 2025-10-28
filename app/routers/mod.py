@@ -19,12 +19,20 @@ def _auth(creds: HTTPAuthorizationCredentials):
 DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3")
 
 async def _ensure_schema(db):
-    # 1) Opret tabel hvis den ikke findes
+    # Tag en write-lock tidligt, så to requests ikke migrerer samtidig
+    # (SQLite: BEGIN IMMEDIATE = reserverer write-lås uden at skrive endnu)
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+    except Exception:
+        # Hvis en anden transaktion allerede kører, går vi videre uden at fejle
+        pass
+
+    # 1) Basis-tabel (uden de nye kolonner). Opretter kun hvis den mangler.
     await db.execute("""
         CREATE TABLE IF NOT EXISTS moderation_queue(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           created_at TEXT NOT NULL,
-          status TEXT NOT NULL,
+          status TEXT NOT NULL,   -- pending | approved
           session_id TEXT,
           ticket_id TEXT,
           contact_id TEXT,
@@ -36,25 +44,42 @@ async def _ensure_schema(db):
           editor_answer TEXT,
           approved_by TEXT,
           approved_at TEXT
-          -- bemærk: ingen final_public her; den tilføjes via migration nedenfor
         )
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_status_id ON moderation_queue(status, id)")
 
-    # 2) Migration: tilføj manglende kolonner dynamisk
-    async def has_col(name: str) -> bool:
-        async with db.execute("PRAGMA table_info('moderation_queue')") as cur:
-            async for r in cur:
-                if (r[1] or "").lower() == name.lower():
-                    return True
-        return False
+    # 2) Slå eksisterende kolonner op
+    cols = set()
+    async with db.execute("PRAGMA table_info('moderation_queue')") as cur:
+        async for r in cur:
+            cols.add((r[1] or "").lower())
 
-    # final_public til offentlig visning
-    if not await has_col("final_public"):
-        await db.execute("ALTER TABLE moderation_queue ADD COLUMN final_public TEXT")
-    # language hvis vi senere vil gemme sprog (ufarligt at have den med)
-    if not await has_col("language"):
-        await db.execute("ALTER TABLE moderation_queue ADD COLUMN language TEXT")
+    # 3) Idempotent helper til at tilføje kolonner
+    async def add_col(name: str, ddl: str):
+        if name.lower() in cols:
+            return
+        try:
+            await db.execute(f"ALTER TABLE moderation_queue ADD COLUMN {ddl}")
+            cols.add(name.lower())
+        except Exception:
+            # Hvis en anden request nåede at tilføje kolonnen imens, tjek igen
+            again = set()
+            async with db.execute("PRAGMA table_info('moderation_queue')") as cur2:
+                async for r2 in cur2:
+                    again.add((r2[1] or "").lower())
+            if name.lower() not in again:
+                raise  # re-rais kun hvis kolonnen virkelig ikke findes
+
+    # 4) Tilføj de nye kolonner, hvis de mangler
+    await add_col("final_public", "final_public TEXT")
+    await add_col("language", "language TEXT")
+
+    # 5) Commit schema-ændringer (hvis vi startede en transaktion ovenfor)
+    try:
+        await db.commit()
+    except Exception:
+        # Hvis vi ikke havde låsen/tx, er der intet at committe. Det er fint.
+        pass
 
     # ingen commit her; kalderen committer efter opdatering/insert
 
