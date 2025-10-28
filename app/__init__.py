@@ -274,13 +274,12 @@ def _inject_greeting(mail_text: str, customer_name: str, lang: str = "da") -> st
 # =========================
 app = FastAPI()
 
-WIX_ORIGIN = os.getenv("WIX_ORIGIN", "").strip()  # fx https://www.alignerservice.com/support
+WIX_ORIGIN = os.getenv("WIX_ORIGIN", "https://www.alignerservice.com").strip()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[WIX_ORIGIN] if WIX_ORIGIN else ["*"],  # sæt WIX_ORIGIN i Render
+    allow_origins=[WIX_ORIGIN],
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["Content-Type", "X-Chat-Token", "Authorization"],
-    # allow_credentials=True,
 )
 
 
@@ -378,6 +377,24 @@ async def on_startup():
         except Exception as e:
             logger.exception("Migration failed; continuing without schema changes")
 
+        # --- ensure UI log table exists ---
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS chat_frontend_log(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at TEXT NOT NULL,
+                        kind TEXT,
+                        session_id TEXT,
+                        email TEXT,
+                        text TEXT
+                    )
+                """)
+                await db.commit()
+            logger.info("chat_frontend_log table ready.")
+        except Exception as e:
+            logger.exception("Failed preparing chat_frontend_log: %s", e)      
+        
         await init_db()
 
         # --- load Q&A JSON (unchanged) ---
@@ -1483,6 +1500,35 @@ async def health():
 @app.post("/debug-token")
 async def debug_token(request: Request):
     return JSONResponse({"received_authorization": request.headers.get("authorization")})
+
+@app.post("/debug/ui-log")
+async def ui_log(request: Request):
+    """
+    Lille, sikker log-endpoint til Wix-UI. Gemmer kun ufarlige felter.
+    Body forventes som JSON: { "kind": "...", "sessionId": "...", "email": "...", "text": "..." }
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    when = datetime.utcnow().isoformat() + "Z"
+    kind = str((body.get("kind") or "")).strip()[:40]
+    sid  = str((body.get("sessionId") or "")).strip()[:80]
+    mail = str((body.get("email") or "")).strip()[:120]
+    text = str((body.get("text") or "")).strip()[:4000]
+
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO chat_frontend_log(created_at, kind, session_id, email, text) VALUES (?, ?, ?, ?, ?)",
+                (when, kind, sid, mail, text)
+            )
+            await db.commit()
+        return {"ok": True, "stored": when}
+    except Exception as e:
+        logger.exception("ui_log insert failed: %s", e)
+        raise HTTPException(status_code=500, detail="log write failed")
 
 @app.post("/api/answer", dependencies=[Depends(require_rag_token)])
 async def api_answer(request: Request):
