@@ -210,20 +210,30 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
 @router.get("/queue")
 async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
-    q = ("SELECT id,created_at,status,from_email,contact_name,subject,"
-         "user_text,model_answer,editor_answer FROM moderation_queue ")
+
+    # Inkluder session_id i SELECT
+    q = (
+        "SELECT id, created_at, status, "
+        "from_email, contact_name, subject, "
+        "user_text, model_answer, editor_answer, "
+        "session_id "                # <<--- nyt felt i SELECT
+        "FROM moderation_queue "
+    )
     args = []
+
     if status and status.lower() != "any":
         q += "WHERE status=? "
         args.append(status.lower())
+
     q += "ORDER BY id DESC LIMIT ?"
     args.append(max(1, min(int(limit or 50), 200)))
-    rows=[]
+
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         await _ensure_schema(db)
         async with db.execute(q, tuple(args)) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
+
     return {"ok": True, "rows": rows}
 
 
