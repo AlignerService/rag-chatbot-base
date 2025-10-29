@@ -13,7 +13,9 @@ from fastapi import APIRouter, HTTPException, Request
 from app import (
     logger, md_to_plain, get_rag_answer,
     detect_language, detect_role, role_label, detect_intent,
-    style_hint, stop_orders_block, customer_mail_guidance,
+    style_hint,  # beholdes, men bruges kun let i prompten
+    # Nedenstående beholdes i import for kompatibilitet, men bruges ikke i chat-svar
+    stop_orders_block, customer_mail_guidance,
     search_qa_json, _qa_to_chunk, get_mao_top_chunks,
     semantic_rerank, mmr_select, _extract_text_from_meta, _strip_html
 )
@@ -151,8 +153,12 @@ async def chat_message(request: Request):
     if row["th"] and row["th"] != _hash_token(token):
         raise HTTPException(status_code=401, detail="bad token")
 
-    # ——— resten af din RAG-logik ———
-    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    # ——— RAG forberedelse ———
+    now  = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    lang = detect_language(text)
+    role = detect_role(text, lang)
+    role_disp = role_label(lang, role)
+    intent = detect_intent(text, lang)
 
     # Gem user-besked
     async with aiosqlite.connect(DB_PATH) as db:
@@ -162,20 +168,28 @@ async def chat_message(request: Request):
         )
         await db.commit()
 
-    # Light RAG-svar
-    lang = detect_language(text)
-    role = detect_role(text, lang)
-    role_disp = role_label(lang, role)
-    intent = detect_intent(text, lang)
-
+    # === NY SYSTEM-PROMPT (engelsk, men instruerer om at svare på brugerens sprog) ===
     system_prompt = (
-        "Du svarer til en tandlæge/ortodontist via en offentlig chat. Svar kort, klart og med specifikke næste skridt. "
-        "Spørg kun ind til det nødvendige for at kunne give et fagligt validt svar. "
-        "Ingen patientnavne eller følsomme data."
-        if lang == "da" else
-        "You respond to a dentist/orthodontist via a public chat. Be concise, specific, and ask only for info needed."
+        "You are an experienced clinical advisor from AlignerService. "
+        "You assist dentists and orthodontists with all aspects of clear aligner treatment — "
+        "from clinical planning and troubleshooting to communication and practice optimization. "
+        "Respond as a professional colleague, not as a salesperson. "
+        "Use concise, practical language. Do not include greetings or signatures. "
+        "Never add sections like 'What we need' or 'Next steps'. "
+        "If key information is missing (e.g., OJ, OB, molar/canine relation, crowding/spacing, arch coordination, Bolton), "
+        "ask for it politely within the answer. "
+        "Use this structure:\n\n"
+        "Brief conclusion:\n"
+        "→ One or two sentences summarizing the key recommendation.\n\n"
+        "Clinical guidance:\n"
+        "1) Bullet list with the essential clinical actions or considerations.\n"
+        "2) Briefly explain why each point matters.\n\n"
+        "If uncertain:\n"
+        "→ Mention exactly what data would help refine the plan.\n\n"
+        "Always answer in the user's language."
     )
 
+    # Retrival-kontekst
     boosted_query = text
     qa_items = search_qa_json(boosted_query, k=20)
     qa_hits = [_qa_to_chunk(x) for x in qa_items]
@@ -201,19 +215,20 @@ async def chat_message(request: Request):
     diversified = mmr_select(boosted_query, reranked, lam=0.4, m=min(6, len(reranked)))
 
     context = "\n\n".join(_strip_html(_extract_text_from_meta(x))[:1200] for x in diversified)[:6000]
+
+    # Stil-hint kan fortsat bruges, men vi undlader mail-guidance og stop-orders i chat
     style = style_hint("markdown", lang)
-    policy = stop_orders_block(lang)
-    if intent in ("status_request", "admin"):
-        style += "\n" + customer_mail_guidance(lang, intent)
+    # policy = stop_orders_block(lang)  # <- fjernet fra prompten for at undgå mail-fraser
+    # if intent in ("status_request", "admin"):
+    #     style += "\n" + customer_mail_guidance(lang, intent)
 
     final_prompt = (
         f"{system_prompt}\n\n"
-        f"{policy}\n\n"
-        "RELEVANT CONTEXT (may be partial):\n"
+        "CONTEXT (may be partial and noisy):\n"
         f"{context}\n\n"
         f"User:\n{text}\n\n"
-        f"Answer in {lang} for role {role_disp}. Keep to 6–10 korte linjer. "
-        "Hvis der mangler nøgledata (Angle-klasse, OJ/OB, crowding/spacing mm, Bolton), bed om præcis det – intet udenom."
+        f"Answer for role {role_disp}. Keep to 6–10 short lines maximum. "
+        "Focus on clinically actionable steps and only request data that truly changes the plan."
     )
 
     try:
@@ -223,7 +238,7 @@ async def chat_message(request: Request):
         answer_md = (
             "Beklager, der opstod en intern fejl. Prøv igen om et øjeblik."
             if lang == "da" else
-            "Sorry, internal error."
+            "Sorry, an internal error occurred. Please try again shortly."
         )
 
     # Gem assistant-besked
@@ -242,11 +257,9 @@ async def chat_message(request: Request):
     }
 
 
-# Historik: vi lader denne være som før (kræver stadig token-header i praksis
-# gennem din frontend-flow, men session-validering sker nu via /message-logikken)
+# Historik: token-verificering + session-check
 @router.get("/history/{session_id}")
 async def chat_history(session_id: str, request: Request):
-    # Valgfrit: kræv token der matcher session_id
     token = request.headers.get("X-Chat-Token") or ""
     if not _verify_token(session_id, token):
         raise HTTPException(status_code=401, detail="bad token")
