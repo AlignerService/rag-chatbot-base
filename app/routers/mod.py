@@ -1,6 +1,6 @@
 # app/routers/mod.py
 from fastapi import APIRouter, HTTPException, Request, Depends
-import aiosqlite, os, hmac, re, logging
+import aiosqlite, os, hmac, re, logging, uuid
 from datetime import datetime
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncio, aiohttp
@@ -104,6 +104,8 @@ async def _ensure_schema(db: aiosqlite.Connection):
         )
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_status_id ON moderation_queue(status, id)")
+    # NYT: hurtig historik-opslag pr. session
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_session_id ON moderation_queue(session_id)")
 
     # ensure optional columns
     cols = set()
@@ -148,9 +150,9 @@ def _name_from_email(email: str) -> str:
     john.doe_smith -> 'John Doe Smith'
     """
     local = (email or "").split("@")[0]
-    local = re.sub(r"[._\-]+", " ", local).strip()
+    local = re.sub(r"[._\\-]+", " ", local).strip()
     # collapse multiple spaces
-    local = re.sub(r"\s{2,}", " ", local)
+    local = re.sub(r"\\s{2,}", " ", local)
     return local.title() if local else ""
 
 def greeting_for(lang: str, name: str, email: str) -> str:
@@ -174,6 +176,9 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
     when = datetime.utcnow().isoformat() + "Z"
 
     session_id   = (body.get("sessionId") or "").strip()
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
     ticket_id    = (body.get("ticketId") or "").strip()
     contact_id   = (body.get("contactId") or "").strip()
     from_email   = (body.get("fromEmail") or "").strip().lower()
@@ -204,36 +209,26 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
     except Exception:
         pass
 
-    return {"ok": True, "status": status, "id": mid}
+    return {"ok": True, "status": status, "id": mid, "sessionId": session_id}
 
 
 @router.get("/queue")
 async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
-
-    # Inkluder session_id i SELECT
-    q = (
-        "SELECT id, created_at, status, "
-        "from_email, contact_name, subject, "
-        "user_text, model_answer, editor_answer, "
-        "session_id "                # <<--- nyt felt i SELECT
-        "FROM moderation_queue "
-    )
+    # Inkluder session_id i SELECT (kritisk for Moderator-historik)
+    q = ("SELECT id,created_at,status,session_id,from_email,contact_name,subject,"
+         "user_text,model_answer,editor_answer FROM moderation_queue ")
     args = []
-
     if status and status.lower() != "any":
         q += "WHERE status=? "
         args.append(status.lower())
-
     q += "ORDER BY id DESC LIMIT ?"
     args.append(max(1, min(int(limit or 50), 200)))
-
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         await _ensure_schema(db)
         async with db.execute(q, tuple(args)) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
-
     return {"ok": True, "rows": rows}
 
 
@@ -269,6 +264,7 @@ async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depe
 
     # stadig intet? Så svar hurtigt og lad frontenden prøve igen om lidt
     return {"ok": False, "suggestion": ""}
+
 
 @router.post("/save")
 async def mod_save(payload: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
@@ -341,37 +337,6 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
     return {"ok": True, "final": final_text, "id": mid}
 
 
-@router.get("/suggest/{mid}")
-async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
-    _auth(credentials)
-    # kick job if empty
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        await _ensure_schema(db)
-        async with db.execute("SELECT user_text, model_answer, language FROM moderation_queue WHERE id=?", (mid,)) as cur:
-            row = await cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="not found")
-
-    if not (row["model_answer"] or "").strip():
-        try:
-            asyncio.create_task(_autosuggest(mid, row["user_text"] or "", (row["language"] or "")))
-        except Exception:
-            pass
-
-    # short poll (≤ 9s) to return something now
-    for _ in range(9):
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT model_answer FROM moderation_queue WHERE id=?", (mid,)) as cur:
-                r = await cur.fetchone()
-                txt = (r and (r["model_answer"] or "").strip()) or ""
-                if txt:
-                    return {"ok": True, "suggestion": txt}
-        await asyncio.sleep(1)
-    return {"ok": False, "suggestion": ""}
-
-
 @router.get("/public")
 async def mod_public(id: int):
     if not id:
@@ -398,24 +363,24 @@ async def mod_health(credentials: HTTPAuthorizationCredentials = Depends(bearer)
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
 
-# app/routers/mod.py (tilføj nederst)
 
 @router.get("/history")
-async def mod_history(session_id: str, limit: int = 50, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+async def mod_history(session_id: str, limit: int = 100, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
-    if not (session_id or "").strip():
+    sid = (session_id or "").strip()
+    if not sid:
         raise HTTPException(status_code=400, detail="missing session_id")
+    lim = max(1, min(int(limit or 100), 500))
+
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        await _ensure_schema(db)  # read
-        sql = """
-        SELECT id, created_at, status, subject, user_text, model_answer, editor_answer, final_public, language
-        FROM moderation_queue
-        WHERE session_id=?
-        ORDER BY id ASC
-        LIMIT ?
-        """
-        async with db.execute(sql, (session_id, max(1, min(int(limit or 50), 200)))) as cur:
+        await _ensure_schema(db)
+        sql = (
+            "SELECT id, created_at, status, session_id, from_email, contact_name, subject, "
+            "user_text, model_answer, editor_answer, final_public, language "
+            "FROM moderation_queue WHERE session_id = ? "
+            "ORDER BY id ASC LIMIT ?"
+        )
+        async with db.execute(sql, (sid, lim)) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
-    return {"ok": True, "session_id": session_id, "rows": rows}
-
+    return {"ok": True, "rows": rows}
