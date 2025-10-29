@@ -1,59 +1,96 @@
 # app/routers/mod.py
 from fastapi import APIRouter, HTTPException, Request, Depends
-import aiosqlite, os, hmac, re
+import aiosqlite, os, hmac, re, logging
 from datetime import datetime
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# ADDED: imports til autosuggest
-import asyncio, aiohttp  # <-- kun tilføjet, intet andet ændret
+# ADDED: async utils & HTTP client
+import asyncio, aiohttp
 
 router = APIRouter(prefix="/mod", tags=["moderation"])
 
-RAG_BEARER_TOKEN = os.getenv("RAG_BEARER_TOKEN","")
+# ------------------
+# Config & logging
+# ------------------
+logger = logging.getLogger("rag-mod")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+
+RAG_BEARER_TOKEN = os.getenv("RAG_BEARER_TOKEN", "").strip()
 bearer = HTTPBearer(auto_error=True)
 
 def _auth(creds: HTTPAuthorizationCredentials):
     if not RAG_BEARER_TOKEN or creds.scheme.lower() != "bearer":
         raise HTTPException(status_code=403, detail="No token")
-    if not hmac.compare_digest(creds.credentials.strip(), RAG_BEARER_TOKEN.strip()):
+    if not hmac.compare_digest(creds.credentials.strip(), RAG_BEARER_TOKEN):
         raise HTTPException(status_code=403, detail="Bad token")
 
-DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3")
+# Brug én og samme DB overalt (sæt via Render env hvis nødvendig)
+DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3").strip()
 
-# ADDED: autosuggest-konfiguration og funktion
-SELF_BASE = os.getenv("SELF_BASE_URL", "https://alignerservice-rag.onrender.com")
-SUGGEST_TIMEOUT = int(os.getenv("SUGGEST_TIMEOUT_SEC", "20"))
+# ------------------
+# Autosuggest setup
+# ------------------
+SELF_BASE = os.getenv("SELF_BASE_URL", "https://alignerservice-rag.onrender.com").rstrip("/")
+SUGGEST_TIMEOUT = int(os.getenv("SUGGEST_TIMEOUT_SEC", "20") or "20")
 
 async def _autosuggest(mid: int, question: str, lang: str):
-    """Call our own /api/answer and store model_answer; runs in background."""
+    """
+    Kalder egen /api/answer og skriver modelsvaret i moderation_queue.model_answer.
+    Kører "fire-and-forget" så intake ikke blokerer.
+    """
+    if not question:
+        return
     try:
-        payload = {"question": question, "output_mode": "mail"}
-        # valgfrit: send sprog videre i prompt-styling hvis din /api/answer bruger det
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{SELF_BASE}/api/answer", json=payload, timeout=SUGGEST_TIMEOUT) as resp:
+        payload = {"question": question, "output_mode": "mail", "lang": (lang or "").strip() or "da"}
+        headers = {"Authorization": f"Bearer {RAG_BEARER_TOKEN}", "Content-Type": "application/json"} if RAG_BEARER_TOKEN else {"Content-Type": "application/json"}
+        timeout = aiohttp.ClientTimeout(total=SUGGEST_TIMEOUT)
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(f"{SELF_BASE}/api/answer", json=payload, headers=headers) as resp:
                 txt = ""
                 if resp.status == 200:
-                    data = await resp.json()
-                    txt = (data.get("finalAnswerPlain") or data.get("finalAnswerMarkdown")
-                           or data.get("finalAnswer") or data.get("text") or "").strip()
-                # skriv til DB hvis vi fik noget
-                if txt:
-                    async with aiosqlite.connect(DB_PATH) as db:
-                        await db.execute("UPDATE moderation_queue SET model_answer=? WHERE id=?", (txt, mid))
-                        await db.commit()
-    except Exception:
-        # vi logger ikke hele traceback her for at holde støjen nede
-        pass
-# END ADDED
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        data = {}
+                    txt = (data.get("finalAnswerPlain")
+                           or data.get("finalAnswerMarkdown")
+                           or data.get("finalAnswer")
+                           or data.get("text")
+                           or "").strip()
 
-async def _ensure_schema(db):
-    # prøv write-lås så to requests ikke migrerer samtidig
+                if not txt:
+                    logger.debug(f"_autosuggest(mid={mid}) empty response, status={resp.status}")
+
+        if txt:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await _ensure_schema(db)
+                await db.execute("UPDATE moderation_queue SET model_answer=? WHERE id=?", (txt, mid))
+                await db.commit()
+                logger.debug(f"_autosuggest(mid={mid}) wrote {len(txt)} chars")
+    except Exception as e:
+        # Debug i stedet for full traceback spam
+        logger.debug(f"_autosuggest(mid={mid}) failed: {e}")
+
+# ------------------
+# DB schema helpers
+# ------------------
+async def _ensure_schema(db: aiosqlite.Connection):
+    # Stabil drift: WAL, normal sync, vent på låse i op til 5 sek
+    try:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
+        await db.execute("PRAGMA busy_timeout=5000")
+    except Exception:
+        pass
+
+    # write-lås så to requests ikke migrerer samtidig
     try:
         await db.execute("BEGIN IMMEDIATE")
     except Exception:
         pass
 
-    # basis-tabel
     await db.execute("""
         CREATE TABLE IF NOT EXISTS moderation_queue(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +109,7 @@ async def _ensure_schema(db):
           approved_at TEXT
         )
     """)
+
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_status_id ON moderation_queue(status, id)")
 
     # kendte kolonner
@@ -87,6 +125,7 @@ async def _ensure_schema(db):
             await db.execute(f"ALTER TABLE moderation_queue ADD COLUMN {ddl}")
             cols.add(name.lower())
         except Exception:
+            # dobbelt-check schema under race
             again = set()
             async with db.execute("PRAGMA table_info('moderation_queue')") as cur2:
                 async for r2 in cur2:
@@ -94,15 +133,25 @@ async def _ensure_schema(db):
             if name.lower() not in again:
                 raise
 
-    # nye kolonner (idempotent)
+    # ekstra felter (idempotent)
     await add_col("final_public", "final_public TEXT")
     await add_col("language", "language TEXT")
+
+    # valgfri ekstra indeks til fremtidige filtre
+    try:
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_lang ON moderation_queue(language)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_created ON moderation_queue(created_at)")
+    except Exception:
+        pass
 
     try:
         await db.commit()
     except Exception:
         pass
 
+# ------------------
+# Endpoints
+# ------------------
 
 @router.post("/intake")
 async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
@@ -135,10 +184,11 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
         await db.commit()
         mid = cur.lastrowid or 0
 
-    # ADDED: fire-and-forget autosuggest (ingen blokering, ingen Wix-timeout)
+    # fire-and-forget autosuggest (ingen blokering)
     try:
         asyncio.create_task(_autosuggest(mid, user_text, language))
     except Exception:
+        # ro på – intake må aldrig fejle pga. baggrundsjob
         pass
 
     return {"ok": True, "status": status, "id": mid}
@@ -154,7 +204,7 @@ async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPA
         q += "WHERE status=? "
         args.append(status.lower())
     q += "ORDER BY id DESC LIMIT ?"
-    args.append(max(1, min(limit, 200)))
+    args.append(max(1, min(int(limit or 50), 200)))
     rows=[]
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -238,7 +288,6 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
                 replaced = True
                 break
         if not replaced:
-            # hvis ingen tydelig hilsen findes, tjek om teksten allerede starter med en hilsen
             starts = (editor_text[:12] or "").lower()
             has_greet = any(starts.startswith(x) for x in ["hej", "hi", "hallo", "bonjour"])
             if has_greet:
@@ -257,11 +306,10 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
     return {"ok": True, "final": final_text, "id": mid}
 
 
-# ADDED: kick/poll-suggest endpoint
 @router.get("/suggest/{mid}")
 async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
-    # kick job hvis tom
+    # Kick job hvis tom
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         await _ensure_schema(db)
@@ -276,7 +324,7 @@ async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depe
         except Exception:
             pass
 
-    # kort poll (≤ 9 sek) for at levere noget “nu”
+    # Kort poll (≤ 9 sek) for at levere noget “nu”
     for _ in range(9):
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -302,3 +350,17 @@ async def mod_public(id: int):
     if not row:
         raise HTTPException(status_code=404, detail="not found")
     return {"ok": True, "status": row["status"], "answer": row["final_public"] or ""}
+
+
+# Simple healthcheck (nem at bruge fra Render)
+@router.get("/health")
+async def mod_health(credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+    _auth(credentials)
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await _ensure_schema(db)
+            async with db.execute("SELECT 1") as cur:
+                await cur.fetchone()
+        return {"ok": True, "db": "ready"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
