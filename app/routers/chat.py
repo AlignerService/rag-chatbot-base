@@ -110,11 +110,18 @@ def _weak_context(chunks, context_text: str, min_words: int = 220, min_sources: 
 _SANITIZE_HEADS = (
     r"^\s*subject\s*:\s*.*?$",
     r"^\s*(hi|hej|hello|dear)\s*,?\s*$",
+    r"^\s*(takeaway|key\s*takeaway[s]?|summary|tl;?\s*dr|conclusion)\s*:?\s*$",
 )
+
 _SANITIZE_BLOCK_HEADS = (
     r"^\s*what\s+we\s+need\s*:?\s*$",
     r"^\s*next\s+steps\s*:?\s*$",
+    r"^\s*(key\s*)?takeaway[s]?\s*:?\s*$",
+    r"^\s*summary\s*:?\s*$",
+    r"^\s*tl;?\s*dr\s*:?\s*$",
+    r"^\s*conclusion\s*:?\s*$",
 )
+
 _SANITIZE_SIGNOFF = (
     r"^\s*(best|kind)\s+regards.*?$",
     r"^\s*(med\s+venlig|venlig)\s*hilsen.*?$",
@@ -175,6 +182,24 @@ def _sanitize_emailish(txt: str) -> str:
     return "\n".join(compact).strip()
 
 
+# ---------- Header-normalizer (placeret lige under _sanitize_emailish) ----------
+_header_alias_re = re.compile(
+    r"^\s*(takeaway|key\s*takeaway[s]?|summary|tl;?\s*dr|conclusion)\s*:?\s*$",
+    re.IGNORECASE
+)
+
+def _normalize_chat_headers(md: str) -> str:
+    if not md:
+        return md
+    out = []
+    for line in md.splitlines():
+        if _header_alias_re.match(line.strip()):
+            out.append("Brief conclusion:")
+        else:
+            out.append(line)
+    return "\n".join(out)
+
+
 # ======================================================
 # System prompts
 # ======================================================
@@ -197,7 +222,8 @@ DEFAULT_SYSTEM_PROMPT = (
     "2) Add brief rationale per point.\n\n"
     "If uncertain:\n"
     "→ State exactly which data would materially change the plan.\n\n"
-    "Always answer in the user's language."
+    "Always answer in the user's language. "
+    "Never use headers like 'Takeaway', 'Key takeaways', 'Summary', 'TL;DR', or 'Conclusion'. "
 )
 
 LOW_EVIDENCE_PROMPT = (
@@ -215,7 +241,8 @@ LOW_EVIDENCE_PROMPT = (
     "Ask only for what is essential to proceed:\n"
     "• e.g., OJ, OB, molar/canine relation, crowding/spacing, arch coordination, Bolton; "
     "mention images/scans only if strictly necessary.\n\n"
-    "Always answer in the user's language."
+    "Always answer in the user's language. "
+    "Never use headers like 'Takeaway', 'Key takeaways', 'Summary', 'TL;DR', or 'Conclusion'. "
 )
 
 
