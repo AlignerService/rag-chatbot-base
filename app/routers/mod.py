@@ -3,8 +3,6 @@ from fastapi import APIRouter, HTTPException, Request, Depends
 import aiosqlite, os, hmac, re, logging
 from datetime import datetime
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
-# ADDED: async utils & HTTP client
 import asyncio, aiohttp
 
 router = APIRouter(prefix="/mod", tags=["moderation"])
@@ -25,7 +23,6 @@ def _auth(creds: HTTPAuthorizationCredentials):
     if not hmac.compare_digest(creds.credentials.strip(), RAG_BEARER_TOKEN):
         raise HTTPException(status_code=403, detail="Bad token")
 
-# Brug én og samme DB overalt (sæt via Render env hvis nødvendig)
 DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3").strip()
 
 # ------------------
@@ -35,20 +32,19 @@ SELF_BASE = os.getenv("SELF_BASE_URL", "https://alignerservice-rag.onrender.com"
 SUGGEST_TIMEOUT = int(os.getenv("SUGGEST_TIMEOUT_SEC", "20") or "20")
 
 async def _autosuggest(mid: int, question: str, lang: str):
-    """
-    Kalder egen /api/answer og skriver modelsvaret i moderation_queue.model_answer.
-    Kører "fire-and-forget" så intake ikke blokerer.
-    """
+    """Call own /api/answer and store into moderation_queue.model_answer. Fire-and-forget."""
     if not question:
         return
     try:
         payload = {"question": question, "output_mode": "mail", "lang": (lang or "").strip() or "da"}
-        headers = {"Authorization": f"Bearer {RAG_BEARER_TOKEN}", "Content-Type": "application/json"} if RAG_BEARER_TOKEN else {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json"}
+        if RAG_BEARER_TOKEN:
+            headers["Authorization"] = f"Bearer {RAG_BEARER_TOKEN}"
         timeout = aiohttp.ClientTimeout(total=SUGGEST_TIMEOUT)
 
+        txt = ""
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(f"{SELF_BASE}/api/answer", json=payload, headers=headers) as resp:
-                txt = ""
                 if resp.status == 200:
                     try:
                         data = await resp.json()
@@ -59,7 +55,6 @@ async def _autosuggest(mid: int, question: str, lang: str):
                            or data.get("finalAnswer")
                            or data.get("text")
                            or "").strip()
-
                 if not txt:
                     logger.debug(f"_autosuggest(mid={mid}) empty response, status={resp.status}")
 
@@ -70,14 +65,13 @@ async def _autosuggest(mid: int, question: str, lang: str):
                 await db.commit()
                 logger.debug(f"_autosuggest(mid={mid}) wrote {len(txt)} chars")
     except Exception as e:
-        # Debug i stedet for full traceback spam
         logger.debug(f"_autosuggest(mid={mid}) failed: {e}")
 
 # ------------------
 # DB schema helpers
 # ------------------
 async def _ensure_schema(db: aiosqlite.Connection):
-    # Stabil drift: WAL, normal sync, vent på låse i op til 5 sek
+    # stable SQLite settings
     try:
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA synchronous=NORMAL")
@@ -85,7 +79,7 @@ async def _ensure_schema(db: aiosqlite.Connection):
     except Exception:
         pass
 
-    # write-lås så to requests ikke migrerer samtidig
+    # migrate under write-lock
     try:
         await db.execute("BEGIN IMMEDIATE")
     except Exception:
@@ -109,10 +103,9 @@ async def _ensure_schema(db: aiosqlite.Connection):
           approved_at TEXT
         )
     """)
-
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_status_id ON moderation_queue(status, id)")
 
-    # kendte kolonner
+    # ensure optional columns
     cols = set()
     async with db.execute("PRAGMA table_info('moderation_queue')") as cur:
         async for r in cur:
@@ -125,7 +118,6 @@ async def _ensure_schema(db: aiosqlite.Connection):
             await db.execute(f"ALTER TABLE moderation_queue ADD COLUMN {ddl}")
             cols.add(name.lower())
         except Exception:
-            # dobbelt-check schema under race
             again = set()
             async with db.execute("PRAGMA table_info('moderation_queue')") as cur2:
                 async for r2 in cur2:
@@ -133,11 +125,9 @@ async def _ensure_schema(db: aiosqlite.Connection):
             if name.lower() not in again:
                 raise
 
-    # ekstra felter (idempotent)
     await add_col("final_public", "final_public TEXT")
     await add_col("language", "language TEXT")
 
-    # valgfri ekstra indeks til fremtidige filtre
     try:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_lang ON moderation_queue(language)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_created ON moderation_queue(created_at)")
@@ -150,9 +140,33 @@ async def _ensure_schema(db: aiosqlite.Connection):
         pass
 
 # ------------------
+# Helpers: greeting name
+# ------------------
+def _name_from_email(email: str) -> str:
+    """
+    Derive a human-looking name from email local-part.
+    john.doe_smith -> 'John Doe Smith'
+    """
+    local = (email or "").split("@")[0]
+    local = re.sub(r"[._\-]+", " ", local).strip()
+    # collapse multiple spaces
+    local = re.sub(r"\s{2,}", " ", local)
+    return local.title() if local else ""
+
+def greeting_for(lang: str, name: str, email: str) -> str:
+    nm = (name or "").strip() or _name_from_email(email or "")
+    if lang == "da":
+        return f"Hej {nm}," if nm else "Hej,"
+    if lang == "de":
+        return f"Hallo {nm}," if nm else "Hallo,"
+    if lang == "fr":
+        return f"Bonjour {nm}," if nm else "Bonjour,"
+    # default EN
+    return f"Hi {nm}," if nm else "Hi,"
+
+# ------------------
 # Endpoints
 # ------------------
-
 @router.post("/intake")
 async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
@@ -184,11 +198,10 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
         await db.commit()
         mid = cur.lastrowid or 0
 
-    # fire-and-forget autosuggest (ingen blokering)
+    # fire-and-forget autosuggest (non-blocking)
     try:
         asyncio.create_task(_autosuggest(mid, user_text, language))
     except Exception:
-        # ro på – intake må aldrig fejle pga. baggrundsjob
         pass
 
     return {"ok": True, "status": status, "id": mid}
@@ -250,22 +263,13 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
     if not mid:
         raise HTTPException(status_code=400, detail="missing id")
 
-    def greeting_for(lang: str, name: str) -> str:
-        nm = (name or "").strip()
-        if lang == "da":
-            return f"Hej {nm}," if nm else "Hej,"
-        if lang == "de":
-            return f"Hallo {nm}," if nm else "Hallo,"
-        if lang == "fr":
-            return f"Bonjour {nm}," if nm else "Bonjour,"
-        return f"Hi {nm}," if nm else "Hi,"
-
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         await _ensure_schema(db)
 
+        # include from_email for greeting fallback
         async with db.execute(
-            "SELECT status, editor_answer, contact_name, language FROM moderation_queue WHERE id=?", (mid,)
+            "SELECT status, editor_answer, contact_name, language, from_email FROM moderation_queue WHERE id=?", (mid,)
         ) as cur:
             row = await cur.fetchone()
 
@@ -277,14 +281,15 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
         editor_text = (row["editor_answer"] or "").strip()
         lang = (row["language"] or "").strip().lower()
         name = (row["contact_name"] or "").strip()
+        email = (row["from_email"] or "").strip()
 
-        # Erstat en ren hilsen-linje blandt de første linjer, ellers præpend
+        # Replace a bare greeting among the first lines, else prepend a proper one
         lines = editor_text.splitlines()
         greet_pat = re.compile(r'^\s*(hi|hej|hallo|bonjour)\s*,?\s*$', re.IGNORECASE)
         replaced = False
         for idx in range(min(len(lines), 6)):
             if greet_pat.match(lines[idx] or ""):
-                lines[idx] = greeting_for(lang, name)
+                lines[idx] = greeting_for(lang, name, email)
                 replaced = True
                 break
         if not replaced:
@@ -293,7 +298,7 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
             if has_greet:
                 final_text = editor_text
             else:
-                final_text = f"{greeting_for(lang, name)}\n\n{editor_text}".strip()
+                final_text = f"{greeting_for(lang, name, email)}\n\n{editor_text}".strip()
         else:
             final_text = "\n".join(lines).strip()
 
@@ -309,7 +314,7 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
 @router.get("/suggest/{mid}")
 async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
-    # Kick job hvis tom
+    # kick job if empty
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         await _ensure_schema(db)
@@ -324,7 +329,7 @@ async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depe
         except Exception:
             pass
 
-    # Kort poll (≤ 9 sek) for at levere noget “nu”
+    # short poll (≤ 9s) to return something now
     for _ in range(9):
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -337,7 +342,6 @@ async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depe
     return {"ok": False, "suggestion": ""}
 
 
-# Offentligt endpoint uden token – kundesiden poller her
 @router.get("/public")
 async def mod_public(id: int):
     if not id:
@@ -352,7 +356,6 @@ async def mod_public(id: int):
     return {"ok": True, "status": row["status"], "answer": row["final_public"] or ""}
 
 
-# Simple healthcheck (nem at bruge fra Render)
 @router.get("/health")
 async def mod_health(credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
