@@ -198,6 +198,65 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
             (who, when, final_text, mid)
         )
         await db.commit()
+@router.post("/approve")
+async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+    _auth(credentials)
+    mid = int(payload.get("id") or 0)
+    who = (payload.get("approved_by") or "Staff").strip()
+    when = datetime.utcnow().isoformat()+"Z"
+    if not mid:
+        raise HTTPException(status_code=400, detail="missing id")
+
+    import re
+
+    def greeting_for(lang: str, name: str) -> str:
+        nm = (name or "").strip()
+        if lang == "da":
+            return f"Hej {nm}," if nm else "Hej,"
+        if lang == "de":
+            return f"Hallo {nm}," if nm else "Hallo,"
+        if lang == "fr":
+            return f"Bonjour {nm}," if nm else "Bonjour,"
+        return f"Hi {nm}," if nm else "Hi,"
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await _ensure_schema(db)
+
+        async with db.execute(
+            "SELECT status, editor_answer, contact_name, language FROM moderation_queue WHERE id=?", (mid,)
+        ) as cur:
+            row = await cur.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="not found")
+        if (row["status"] or "").lower() == "approved":
+            raise HTTPException(status_code=409, detail="already approved")
+
+        editor_text = (row["editor_answer"] or "").strip()
+        lang = (row["language"] or "").strip().lower()
+        name = (row["contact_name"] or "").strip()
+
+        # REWRITE GREETING: find en tidlig ren hilsenlinje og erstat med hilsen m. navn
+        lines = editor_text.splitlines()
+        greet_pat = re.compile(r'^\s*(hi|hej|hallo|bonjour)\s*,?\s*$', re.IGNORECASE)
+        replaced = False
+        # tjek de første få linjer (typisk Subject:, blank linje, hilsen)
+        for idx in range(min(len(lines), 6)):
+            if greet_pat.match(lines[idx] or ""):
+                lines[idx] = greeting_for(lang, name)
+                replaced = True
+                break
+        if not replaced:
+            # hvis ingen hilsen fundet, præpend en
+            lines = [greeting_for(lang, name), "", *lines]
+        final_text = "\n".join(lines).strip()
+
+        await db.execute(
+            "UPDATE moderation_queue SET status='approved', approved_by=?, approved_at=?, final_public=? WHERE id=?",
+            (who, when, final_text, mid)
+        )
+        await db.commit()
 
     return {"ok": True, "final": final_text, "id": mid}
 
