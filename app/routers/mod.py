@@ -384,3 +384,18 @@ async def mod_history(session_id: str, limit: int = 100, credentials: HTTPAuthor
         async with db.execute(sql, (sid, lim)) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
     return {"ok": True, "rows": rows}
+
+@router.get("/count")
+async def mod_count(status: str = "pending", credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+    _auth(credentials)
+    sql = "SELECT COUNT(*) FROM moderation_queue"
+    args = []
+    if status and status.lower() != "any":
+        sql += " WHERE status=?"
+        args.append(status.lower())
+    async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_schema(db)
+        async with db.execute(sql, tuple(args)) as cur:
+            row = await cur.fetchone()
+            total = int(row[0]) if row and row[0] is not None else 0
+    return {"ok": True, "count": total}
