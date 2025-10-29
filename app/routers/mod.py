@@ -227,18 +227,38 @@ async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPA
     return {"ok": True, "rows": rows}
 
 
-@router.get("/item/{mid}")
-async def mod_item(mid: int, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+@router.get("/suggest/{mid}")
+async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
+    # kick baggrundsjob hvis der ikke findes et forslag endnu
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        await _ensure_schema(db)
-        async with db.execute("SELECT * FROM moderation_queue WHERE id=?", (mid,)) as cur:
+        await _ensure_schema(db)  # READ, ikke write
+        async with db.execute("SELECT user_text, model_answer, language FROM moderation_queue WHERE id=?", (mid,)) as cur:
             row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="not found")
-    return {"ok": True, "item": dict(row)}
 
+    if not (row["model_answer"] or "").strip():
+        try:
+            asyncio.create_task(_autosuggest(mid, row["user_text"] or "", (row["language"] or "")))
+        except Exception:
+            pass
+
+    # kort poll (≤ 4 sek) for at levere noget “nu”
+    for _ in range(4):
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            # READ, ikke write
+            async with db.execute("SELECT model_answer FROM moderation_queue WHERE id=?", (mid,)) as cur:
+                r = await cur.fetchone()
+                txt = (r and (r["model_answer"] or "").strip()) or ""
+                if txt:
+                    return {"ok": True, "suggestion": txt}
+        await asyncio.sleep(1)
+
+    # stadig intet? Så svar hurtigt og lad frontenden prøve igen om lidt
+    return {"ok": False, "suggestion": ""}
 
 @router.post("/save")
 async def mod_save(payload: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
