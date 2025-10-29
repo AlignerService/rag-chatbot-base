@@ -4,6 +4,9 @@ import aiosqlite, os, hmac, re
 from datetime import datetime
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+# ADDED: imports til autosuggest
+import asyncio, aiohttp  # <-- kun tilføjet, intet andet ændret
+
 router = APIRouter(prefix="/mod", tags=["moderation"])
 
 RAG_BEARER_TOKEN = os.getenv("RAG_BEARER_TOKEN","")
@@ -16,6 +19,32 @@ def _auth(creds: HTTPAuthorizationCredentials):
         raise HTTPException(status_code=403, detail="Bad token")
 
 DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3")
+
+# ADDED: autosuggest-konfiguration og funktion
+SELF_BASE = os.getenv("SELF_BASE_URL", "https://alignerservice-rag.onrender.com")
+SUGGEST_TIMEOUT = int(os.getenv("SUGGEST_TIMEOUT_SEC", "20"))
+
+async def _autosuggest(mid: int, question: str, lang: str):
+    """Call our own /api/answer and store model_answer; runs in background."""
+    try:
+        payload = {"question": question, "output_mode": "mail"}
+        # valgfrit: send sprog videre i prompt-styling hvis din /api/answer bruger det
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{SELF_BASE}/api/answer", json=payload, timeout=SUGGEST_TIMEOUT) as resp:
+                txt = ""
+                if resp.status == 200:
+                    data = await resp.json()
+                    txt = (data.get("finalAnswerPlain") or data.get("finalAnswerMarkdown")
+                           or data.get("finalAnswer") or data.get("text") or "").strip()
+                # skriv til DB hvis vi fik noget
+                if txt:
+                    async with aiosqlite.connect(DB_PATH) as db:
+                        await db.execute("UPDATE moderation_queue SET model_answer=? WHERE id=?", (txt, mid))
+                        await db.commit()
+    except Exception:
+        # vi logger ikke hele traceback her for at holde støjen nede
+        pass
+# END ADDED
 
 async def _ensure_schema(db):
     # prøv write-lås så to requests ikke migrerer samtidig
@@ -105,6 +134,13 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
         )
         await db.commit()
         mid = cur.lastrowid or 0
+
+    # ADDED: fire-and-forget autosuggest (ingen blokering, ingen Wix-timeout)
+    try:
+        asyncio.create_task(_autosuggest(mid, user_text, language))
+    except Exception:
+        pass
+
     return {"ok": True, "status": status, "id": mid}
 
 
@@ -219,6 +255,38 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
         await db.commit()
 
     return {"ok": True, "final": final_text, "id": mid}
+
+
+# ADDED: kick/poll-suggest endpoint
+@router.get("/suggest/{mid}")
+async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+    _auth(credentials)
+    # kick job hvis tom
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await _ensure_schema(db)
+        async with db.execute("SELECT user_text, model_answer, language FROM moderation_queue WHERE id=?", (mid,)) as cur:
+            row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+
+    if not (row["model_answer"] or "").strip():
+        try:
+            asyncio.create_task(_autosuggest(mid, row["user_text"] or "", (row["language"] or "")))
+        except Exception:
+            pass
+
+    # kort poll (≤ 9 sek) for at levere noget “nu”
+    for _ in range(9):
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT model_answer FROM moderation_queue WHERE id=?", (mid,)) as cur:
+                r = await cur.fetchone()
+                txt = (r and (r["model_answer"] or "").strip()) or ""
+                if txt:
+                    return {"ok": True, "suggestion": txt}
+        await asyncio.sleep(1)
+    return {"ok": False, "suggestion": ""}
 
 
 # Offentligt endpoint uden token – kundesiden poller her
