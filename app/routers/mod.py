@@ -31,41 +31,83 @@ DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3").strip()
 SELF_BASE = os.getenv("SELF_BASE_URL", "https://alignerservice-rag.onrender.com").rstrip("/")
 SUGGEST_TIMEOUT = int(os.getenv("SUGGEST_TIMEOUT_SEC", "20") or "20")
 
-async def _autosuggest(mid: int, question: str, lang: str):
-    """Call own /api/answer and store into moderation_queue.model_answer. Fire-and-forget."""
-    if not question:
-        return
-    try:
-        payload = {"question": question, "output_mode": "mail", "lang": (lang or "").strip() or "da"}
-        headers = {"Content-Type": "application/json"}
-        if RAG_BEARER_TOKEN:
-            headers["Authorization"] = f"Bearer {RAG_BEARER_TOKEN}"
-        timeout = aiohttp.ClientTimeout(total=SUGGEST_TIMEOUT)
+# ---------- Tilføjet: saniterings-helper ----------
+_SANITIZE_HEADS = (
+    r"^\s*subject\s*:\s*.*?$",            # Subject: ...
+    r"^\s*(hi|hej|hello|dear)\s*,?\s*$",  # en-linjers hilsen øverst
+)
+_SANITIZE_BLOCK_HEADS = (
+    r"^\s*what\s+we\s+need\s*:?\s*$",
+    r"^\s*next\s+steps\s*:?\s*$",
+)
+_SANITIZE_SIGNOFF = (
+    r"^\s*(best|kind)\s+regards.*?$",
+    r"^\s*(med\s+venlig|venlig)\s*hilsen.*?$",
+    r"^\s*(regards|cheers)\s*,?\s*$",
+    r"^\s*(dr\.\s*.*|helle\s+hatt|alignerservice)\s*$",
+)
 
-        txt = ""
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(f"{SELF_BASE}/api/answer", json=payload, headers=headers) as resp:
-                if resp.status == 200:
-                    try:
-                        data = await resp.json()
-                    except Exception:
-                        data = {}
-                    txt = (data.get("finalAnswerPlain")
-                           or data.get("finalAnswerMarkdown")
-                           or data.get("finalAnswer")
-                           or data.get("text")
-                           or "").strip()
-                if not txt:
-                    logger.debug(f"_autosuggest(mid={mid}) empty response, status={resp.status}")
+_head_re = [re.compile(p, re.IGNORECASE) for p in _SANITIZE_HEADS]
+_block_re = [re.compile(p, re.IGNORECASE) for p in _SANITIZE_BLOCK_HEADS]
+_signoff_re = [re.compile(p, re.IGNORECASE) for p in _SANITIZE_SIGNOFF]
 
-        if txt:
-            async with aiosqlite.connect(DB_PATH) as db:
-                await _ensure_schema(db)
-                await db.execute("UPDATE moderation_queue SET model_answer=? WHERE id=?", (txt, mid))
-                await db.commit()
-                logger.debug(f"_autosuggest(mid={mid}) wrote {len(txt)} chars")
-    except Exception as e:
-        logger.debug(f"_autosuggest(mid={mid}) failed: {e}")
+def _sanitize_chat(txt: str) -> str:
+    if not txt:
+        return ""
+    lines = (txt or "").splitlines()
+
+    # 1) Drop "Subject:" linjer og bare hilsner i toppen
+    out = []
+    for li, line in enumerate(lines):
+        if li < 6 and any(r.match(line) for r in _head_re):
+            continue
+        out.append(line)
+    lines = out
+
+    # 2) Fjern blokke under "What we need" / "Next steps" indtil blank linje eller filslut
+    def drop_blocks(ls):
+        res = []
+        i = 0
+        while i < len(ls):
+            if any(r.match(ls[i]) for r in _block_re):
+                i += 1
+                # Skipper linjer indtil tom linje eller slut
+                while i < len(ls) and ls[i].strip() != "":
+                    i += 1
+                # spring evt. tom linje over
+                if i < len(ls) and ls[i].strip() == "":
+                    i += 1
+                continue
+            res.append(ls[i])
+            i += 1
+        return res
+
+    lines = drop_blocks(lines)
+
+    # 3) Fjern sign-off linjer i bunden (op til 4 linjer)
+    tail = 0
+    for j in range(1, min(6, len(lines)) + 1):
+        if any(r.match(lines[-j].strip()) for r in _signoff_re):
+            tail += 1
+        else:
+            break
+    if tail:
+        lines = lines[:-tail]
+
+    # 4) Kompaktér flere tomme linjer
+    compact = []
+    prev_blank = False
+    for line in lines:
+        is_blank = (line.strip() == "")
+        if is_blank and prev_blank:
+            continue
+        compact.append(line)
+        prev_blank = is_blank
+
+    out_txt = "\n".join(compact).strip()
+    return out_txt
+# ---------- Slut saniterings-helper ----------
+
 
 # ------------------
 # DB schema helpers
@@ -150,9 +192,9 @@ def _name_from_email(email: str) -> str:
     john.doe_smith -> 'John Doe Smith'
     """
     local = (email or "").split("@")[0]
-    local = re.sub(r"[._\\-]+", " ", local).strip()
+    local = re.sub(r"[._\-]+", " ", local).strip()
     # collapse multiple spaces
-    local = re.sub(r"\\s{2,}", " ", local)
+    local = re.sub(r"\s{2,}", " ", local)
     return local.title() if local else ""
 
 def greeting_for(lang: str, name: str, email: str) -> str:
@@ -197,7 +239,7 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
         cur = await db.execute(
             """INSERT INTO moderation_queue
                (created_at,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,model_answer,editor_answer,final_public,language)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?, ?,?)""",
             (when,status,session_id,ticket_id,contact_id,from_email,contact_name,subject,user_text,"","", "", language)
         )
         await db.commit()
@@ -232,13 +274,55 @@ async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPA
     return {"ok": True, "rows": rows}
 
 
+# ---------- Opdateret: autosuggest i CHAT-mode + sanitering ----------
+async def _autosuggest(mid: int, question: str, lang: str):
+    """Call own /api/answer in CHAT mode and store sanitized suggestion."""
+    if not question:
+        return
+    try:
+        payload = {
+            "question": question,
+            "output_mode": "chat",          # var "mail" -> nu chat-mode
+            "lang": (lang or "").strip() or "da",
+            "channel": "moderator"          # valgfrit signal
+        }
+        headers = {"Content-Type": "application/json"}
+        if RAG_BEARER_TOKEN:
+            headers["Authorization"] = f"Bearer {RAG_BEARER_TOKEN}"
+        timeout = aiohttp.ClientTimeout(total=SUGGEST_TIMEOUT)
+
+        txt = ""
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(f"{SELF_BASE}/api/answer", json=payload, headers=headers) as resp:
+                if resp.status == 200:
+                    try:
+                        data = await resp.json()
+                    except Exception:
+                        data = {}
+                    txt = (data.get("finalAnswerPlain")
+                           or data.get("finalAnswerMarkdown")
+                           or data.get("finalAnswer")
+                           or data.get("text")
+                           or "").strip()
+
+        if txt:
+            txt = _sanitize_chat(txt)  # rens mailsprog/subject/signatur
+            async with aiosqlite.connect(DB_PATH) as db:
+                await _ensure_schema(db)
+                await db.execute("UPDATE moderation_queue SET model_answer=? WHERE id=?", (txt, mid))
+                await db.commit()
+    except Exception as e:
+        logger.debug(f"_autosuggest(mid={mid}) failed: {e}")
+
+
+# ---------- Opdateret: /suggest saniterer output og poller kort ----------
 @router.get("/suggest/{mid}")
 async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
-    # kick baggrundsjob hvis der ikke findes et forslag endnu
+    # kick job if empty
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        await _ensure_schema(db)  # READ, ikke write
+        await _ensure_schema(db)
         async with db.execute("SELECT user_text, model_answer, language FROM moderation_queue WHERE id=?", (mid,)) as cur:
             row = await cur.fetchone()
     if not row:
@@ -250,19 +334,17 @@ async def mod_suggest(mid: int, credentials: HTTPAuthorizationCredentials = Depe
         except Exception:
             pass
 
-    # kort poll (≤ 4 sek) for at levere noget “nu”
-    for _ in range(4):
+    # kort poll (≤ 9s)
+    for _ in range(9):
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
-            # READ, ikke write
             async with db.execute("SELECT model_answer FROM moderation_queue WHERE id=?", (mid,)) as cur:
                 r = await cur.fetchone()
                 txt = (r and (r["model_answer"] or "").strip()) or ""
                 if txt:
-                    return {"ok": True, "suggestion": txt}
+                    return {"ok": True, "suggestion": _sanitize_chat(txt)}
         await asyncio.sleep(1)
 
-    # stadig intet? Så svar hurtigt og lad frontenden prøve igen om lidt
     return {"ok": False, "suggestion": ""}
 
 
