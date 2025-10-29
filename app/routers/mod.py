@@ -96,7 +96,7 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
     contact_name = (body.get("contactName") or body.get("customerName") or "").strip()
     subject      = (body.get("subject") or "").strip()
     user_text    = (body.get("question") or body.get("text") or "").strip()
-    language     = (body.get("lang") or "").strip().lower()
+    language     = (body.get("language") or "").strip().lower()  # <-- NYT
 
     if not user_text:
         raise HTTPException(status_code=400, detail="missing user text")
@@ -166,36 +166,46 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
     when = datetime.utcnow().isoformat()+"Z"
     if not mid:
         raise HTTPException(status_code=400, detail="missing id")
+
+    def greeting_for(lang: str, name: str) -> str:
+        nm = (name or "").strip()
+        if lang == "da":
+            return f"Hej {nm}," if nm else "Hej,"
+        if lang == "de":
+            return f"Hallo {nm}," if nm else "Hallo,"
+        if lang == "fr":
+            return f"Bonjour {nm}," if nm else "Bonjour,"
+        # fallback EN
+        return f"Hi {nm}," if nm else "Hi,"
+
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         await _ensure_schema(db)
-        # 1) find status + tekst
-        async with db.execute("SELECT status, editor_answer FROM moderation_queue WHERE id=?", (mid,)) as cur:
+
+        async with db.execute(
+            "SELECT status, editor_answer, contact_name, language FROM moderation_queue WHERE id=?", (mid,)
+        ) as cur:
             row = await cur.fetchone()
+
         if not row:
             raise HTTPException(status_code=404, detail="not found")
         if (row["status"] or "").lower() == "approved":
             raise HTTPException(status_code=409, detail="already approved")
-        final_text = (row["editor_answer"] or "").strip()
 
-        # 2) update (status + final_public spejl)
+        editor_text = (row["editor_answer"] or "").strip()
+        lang = (row["language"] or "").strip().lower()
+        name = (row["contact_name"] or "").strip()
+
+        # Hvis teksten allerede starter med en hilsen, så lad den være.
+        starts = editor_text[:12].lower()
+        has_greet = any(starts.startswith(x) for x in ["hej", "hi", "hallo", "bonjour"])
+        final_text = editor_text if has_greet else f"{greeting_for(lang, name)}\n\n{editor_text}".strip()
+
         await db.execute(
             "UPDATE moderation_queue SET status='approved', approved_by=?, approved_at=?, final_public=? WHERE id=?",
             (who, when, final_text, mid)
         )
         await db.commit()
+
     return {"ok": True, "final": final_text, "id": mid}
 
-# Offentlig, uden token: bruges af kundesiden til at hente godkendt svar
-@router.get("/public")
-async def mod_public(id: int):
-    if not id:
-        raise HTTPException(status_code=400, detail="missing id")
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        await _ensure_schema(db)
-        async with db.execute("SELECT status, final_public FROM moderation_queue WHERE id=?", (id,)) as cur:
-            row = await cur.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="not found")
-    return {"ok": True, "status": row["status"], "answer": row["final_public"] or ""}
