@@ -23,6 +23,15 @@ from app import (
 ENABLE = os.getenv("AI_CHAT_ENABLE", "1") == "1"
 DB_PATH = os.getenv("LOCAL_DB_PATH", "/data/rag.sqlite3")
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)).strip())
+    except Exception:
+        return default
+
+# Temperatur hentes fra Render env var (fallback 0.2)
+CHAT_TEMPERATURE = _env_float("OPENAI_TEMPERATURE", 0.2)
+
 # ======================================================
 # 1) Kolonne-map (peg kode mod dine rigtige felter)
 # ======================================================
@@ -83,6 +92,59 @@ async def _require_session(sid: str):
         raise HTTPException(status_code=404, detail="session not found")
     if (row["status"] or "").lower() not in ("active", "open"):
         raise HTTPException(status_code=409, detail="session closed")
+
+
+# ======================================================
+# Svag-kontekst detektor (hallucinations-guard)
+# ======================================================
+def _weak_context(chunks, context_text: str, min_words: int = 220, min_sources: int = 2) -> bool:
+    words = len((context_text or "").split())
+    sources = len(chunks or [])
+    return (words < min_words) or (sources < min_sources)
+
+
+# ======================================================
+# System prompts
+# ======================================================
+DEFAULT_SYSTEM_PROMPT = (
+    "You are an experienced clinical advisor from AlignerService. "
+    "You assist dentists and orthodontists with all aspects of clear aligner treatment — "
+    "from clinical planning and troubleshooting to communication and practice optimization. "
+    "Respond as a professional colleague, not as a salesperson. "
+    "Use concise, practical language. Do not include greetings or signatures. "
+    "Never include sections like 'What we need' or 'Next steps'. "
+    "If key information is missing (e.g., overjet/overbite, molar/canine relation, crowding/spacing, arch coordination, Bolton), "
+    "ask politely for exactly those within the answer. "
+    "If the user mentions photos, radiographs/x-rays, CBCT, or intraoral scans, remind them to share such material ONLY "
+    "via their own Doctor Platform (for GDPR/HIPAA compliance), never through this chat. "
+    "Format:\n\n"
+    "Brief conclusion:\n"
+    "→ One or two sentences summarizing the key recommendation.\n\n"
+    "Clinical guidance:\n"
+    "1) Bullet list with essential clinical actions or considerations.\n"
+    "2) Add brief rationale per point.\n\n"
+    "If uncertain:\n"
+    "→ State exactly which data would materially change the plan.\n\n"
+    "Always answer in the user's language."
+)
+
+LOW_EVIDENCE_PROMPT = (
+    "You are an experienced clinical advisor from AlignerService. "
+    "EVIDENCE IS THIN: do not speculate or invent details. "
+    "If it is not in the context, do not imply it. "
+    "If the user mentions photos, radiographs/x-rays, CBCT, or intraoral scans, remind them to share such material ONLY "
+    "via their own Doctor Platform (GDPR/HIPAA), never through this chat. "
+    "Do not include greetings, signatures, or sections like 'What we need' or 'Next steps'. "
+    "Format:\n\n"
+    "Brief conclusion (provisional):\n"
+    "→ 1–2 conservative sentences.\n\n"
+    "Clinical guidance (basics only):\n"
+    "• 3–5 safe actions/checks that hold without assumptions.\n\n"
+    "Ask only for what is essential to proceed:\n"
+    "• e.g., OJ, OB, molar/canine relation, crowding/spacing, arch coordination, Bolton; "
+    "mention images/scans only if strictly necessary.\n\n"
+    "Always answer in the user's language."
+)
 
 
 # ======================================================
@@ -168,59 +230,37 @@ async def chat_message(request: Request):
         )
         await db.commit()
 
-    # === NY SYSTEM-PROMPT (engelsk, men instruerer om at svare på brugerens sprog) ===
-    system_prompt = (
-        "You are an experienced clinical advisor from AlignerService. "
-        "You assist dentists and orthodontists with all aspects of clear aligner treatment — "
-        "from clinical planning and troubleshooting to communication and practice optimization. "
-        "Respond as a professional colleague, not as a salesperson. "
-        "Use concise, practical language. Do not include greetings or signatures. "
-        "Never add sections like 'What we need' or 'Next steps'. "
-        "If key information is missing (e.g., OJ, OB, molar/canine relation, crowding/spacing, arch coordination, Bolton), "
-        "ask for it politely within the answer. "
-        "Use this structure:\n\n"
-        "Brief conclusion:\n"
-        "→ One or two sentences summarizing the key recommendation.\n\n"
-        "Clinical guidance:\n"
-        "1) Bullet list with the essential clinical actions or considerations.\n"
-        "2) Briefly explain why each point matters.\n\n"
-        "If uncertain:\n"
-        "→ Mention exactly what data would help refine the plan.\n\n"
-        "Always answer in the user's language."
-    )
-
-    # Retrival-kontekst
+    # Retrieval-kontekst
     boosted_query = text
-    qa_items = search_qa_json(boosted_query, k=20)
+    qa_items = search_qa_json(boosted_query, k=30)
     qa_hits = [_qa_to_chunk(x) for x in qa_items]
     try:
-        mao_kw = await get_mao_top_chunks(boosted_query, k=8)
+        mao_kw = await get_mao_top_chunks(boosted_query, k=10)
     except Exception:
         mao_kw = []
 
-    # Dedup
+    # Dedup de sammensatte kandidater
     cands = qa_hits + mao_kw
     uniq, seen = [], set()
     for c in cands:
         t = _strip_html(_extract_text_from_meta(c))
         if not t:
             continue
-        k = t[:160].lower()
+        k = t[:200].lower()
         if k in seen:
             continue
         uniq.append(c)
         seen.add(k)
 
-    reranked = semantic_rerank(boosted_query, uniq, topk=min(8, len(uniq)))
-    diversified = mmr_select(boosted_query, reranked, lam=0.4, m=min(6, len(reranked)))
+    reranked = semantic_rerank(boosted_query, uniq, topk=min(10, len(uniq)))
+    diversified = mmr_select(boosted_query, reranked, lam=0.4, m=min(8, len(reranked)))
+    context = "\n\n".join(_strip_html(_extract_text_from_meta(x))[:1400] for x in diversified)[:7000]
 
-    context = "\n\n".join(_strip_html(_extract_text_from_meta(x))[:1200] for x in diversified)[:6000]
+    # Vælg prompt efter kontekststyrke
+    system_prompt = LOW_EVIDENCE_PROMPT if _weak_context(diversified, context) else DEFAULT_SYSTEM_PROMPT
 
-    # Stil-hint kan fortsat bruges, men vi undlader mail-guidance og stop-orders i chat
-    style = style_hint("markdown", lang)
-    # policy = stop_orders_block(lang)  # <- fjernet fra prompten for at undgå mail-fraser
-    # if intent in ("status_request", "admin"):
-    #     style += "\n" + customer_mail_guidance(lang, intent)
+    # Stil-hint beholdes (kan hjælpe med markdown), men uden mail-fraser
+    _ = style_hint("markdown", lang)
 
     final_prompt = (
         f"{system_prompt}\n\n"
@@ -231,8 +271,12 @@ async def chat_message(request: Request):
         "Focus on clinically actionable steps and only request data that truly changes the plan."
     )
 
+    # Kald LLM med temperatur fra env; fallback til ældre signatur
     try:
-        answer_md = await get_rag_answer(final_prompt)
+        try:
+            answer_md = await get_rag_answer(final_prompt, temperature=CHAT_TEMPERATURE)
+        except TypeError:
+            answer_md = await get_rag_answer(final_prompt)
     except Exception:
         logger.exception("chat LLM failed")
         answer_md = (
