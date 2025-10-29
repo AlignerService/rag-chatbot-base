@@ -1,9 +1,8 @@
 # app/routers/mod.py
 from fastapi import APIRouter, HTTPException, Request, Depends
-import aiosqlite, os
+import aiosqlite, os, hmac, re
 from datetime import datetime
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import hmac
 
 router = APIRouter(prefix="/mod", tags=["moderation"])
 
@@ -19,13 +18,13 @@ def _auth(creds: HTTPAuthorizationCredentials):
 DB_PATH = os.getenv("DB_PATH", "/data/rag.sqlite3")
 
 async def _ensure_schema(db):
-    # Prøv at sikre write-lås, så to requests ikke migrerer samtidig
+    # prøv write-lås så to requests ikke migrerer samtidig
     try:
         await db.execute("BEGIN IMMEDIATE")
     except Exception:
         pass
 
-    # Basis-tabel
+    # basis-tabel
     await db.execute("""
         CREATE TABLE IF NOT EXISTS moderation_queue(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +45,7 @@ async def _ensure_schema(db):
     """)
     await db.execute("CREATE INDEX IF NOT EXISTS idx_mq_status_id ON moderation_queue(status, id)")
 
-    # Kendte kolonner
+    # kendte kolonner
     cols = set()
     async with db.execute("PRAGMA table_info('moderation_queue')") as cur:
         async for r in cur:
@@ -66,7 +65,7 @@ async def _ensure_schema(db):
             if name.lower() not in again:
                 raise
 
-    # Nye kolonner (idempotent)
+    # nye kolonner (idempotent)
     await add_col("final_public", "final_public TEXT")
     await add_col("language", "language TEXT")
 
@@ -74,6 +73,7 @@ async def _ensure_schema(db):
         await db.commit()
     except Exception:
         pass
+
 
 @router.post("/intake")
 async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
@@ -88,7 +88,6 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
     contact_name = (body.get("contactName") or body.get("customerName") or "").strip()
     subject      = (body.get("subject") or "").strip()
     user_text    = (body.get("question") or body.get("text") or "").strip()
-    # accepter både language og lang
     language     = (body.get("language") or body.get("lang") or "").strip().lower()
 
     if not user_text:
@@ -107,6 +106,7 @@ async def mod_intake(request: Request, credentials: HTTPAuthorizationCredentials
         await db.commit()
         mid = cur.lastrowid or 0
     return {"ok": True, "status": status, "id": mid}
+
 
 @router.get("/queue")
 async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
@@ -127,6 +127,7 @@ async def mod_queue(status: str = "pending", limit: int = 50, credentials: HTTPA
             rows = [dict(r) for r in await cur.fetchall()]
     return {"ok": True, "rows": rows}
 
+
 @router.get("/item/{mid}")
 async def mod_item(mid: int, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
@@ -138,6 +139,7 @@ async def mod_item(mid: int, credentials: HTTPAuthorizationCredentials = Depends
     if not row:
         raise HTTPException(status_code=404, detail="not found")
     return {"ok": True, "item": dict(row)}
+
 
 @router.post("/save")
 async def mod_save(payload: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
@@ -152,6 +154,7 @@ async def mod_save(payload: dict, credentials: HTTPAuthorizationCredentials = De
         await db.commit()
     return {"ok": True}
 
+
 @router.post("/approve")
 async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
     _auth(credentials)
@@ -189,68 +192,25 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
         lang = (row["language"] or "").strip().lower()
         name = (row["contact_name"] or "").strip()
 
-        starts = editor_text[:12].strip().lower()
-        has_greet = any(starts.startswith(x) for x in ["hej", "hi", "hallo", "bonjour"])
-        final_text = editor_text if has_greet else f"{greeting_for(lang, name)}\n\n{editor_text}".strip()
-
-        await db.execute(
-            "UPDATE moderation_queue SET status='approved', approved_by=?, approved_at=?, final_public=? WHERE id=?",
-            (who, when, final_text, mid)
-        )
-        await db.commit()
-@router.post("/approve")
-async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
-    _auth(credentials)
-    mid = int(payload.get("id") or 0)
-    who = (payload.get("approved_by") or "Staff").strip()
-    when = datetime.utcnow().isoformat()+"Z"
-    if not mid:
-        raise HTTPException(status_code=400, detail="missing id")
-
-    import re
-
-    def greeting_for(lang: str, name: str) -> str:
-        nm = (name or "").strip()
-        if lang == "da":
-            return f"Hej {nm}," if nm else "Hej,"
-        if lang == "de":
-            return f"Hallo {nm}," if nm else "Hallo,"
-        if lang == "fr":
-            return f"Bonjour {nm}," if nm else "Bonjour,"
-        return f"Hi {nm}," if nm else "Hi,"
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        await _ensure_schema(db)
-
-        async with db.execute(
-            "SELECT status, editor_answer, contact_name, language FROM moderation_queue WHERE id=?", (mid,)
-        ) as cur:
-            row = await cur.fetchone()
-
-        if not row:
-            raise HTTPException(status_code=404, detail="not found")
-        if (row["status"] or "").lower() == "approved":
-            raise HTTPException(status_code=409, detail="already approved")
-
-        editor_text = (row["editor_answer"] or "").strip()
-        lang = (row["language"] or "").strip().lower()
-        name = (row["contact_name"] or "").strip()
-
-        # REWRITE GREETING: find en tidlig ren hilsenlinje og erstat med hilsen m. navn
+        # Erstat en ren hilsen-linje blandt de første linjer, ellers præpend
         lines = editor_text.splitlines()
         greet_pat = re.compile(r'^\s*(hi|hej|hallo|bonjour)\s*,?\s*$', re.IGNORECASE)
         replaced = False
-        # tjek de første få linjer (typisk Subject:, blank linje, hilsen)
         for idx in range(min(len(lines), 6)):
             if greet_pat.match(lines[idx] or ""):
                 lines[idx] = greeting_for(lang, name)
                 replaced = True
                 break
         if not replaced:
-            # hvis ingen hilsen fundet, præpend en
-            lines = [greeting_for(lang, name), "", *lines]
-        final_text = "\n".join(lines).strip()
+            # hvis ingen tydelig hilsen findes, tjek om teksten allerede starter med en hilsen
+            starts = (editor_text[:12] or "").lower()
+            has_greet = any(starts.startswith(x) for x in ["hej", "hi", "hallo", "bonjour"])
+            if has_greet:
+                final_text = editor_text
+            else:
+                final_text = f"{greeting_for(lang, name)}\n\n{editor_text}".strip()
+        else:
+            final_text = "\n".join(lines).strip()
 
         await db.execute(
             "UPDATE moderation_queue SET status='approved', approved_by=?, approved_at=?, final_public=? WHERE id=?",
@@ -259,6 +219,7 @@ async def mod_approve(payload: dict, credentials: HTTPAuthorizationCredentials =
         await db.commit()
 
     return {"ok": True, "final": final_text, "id": mid}
+
 
 # Offentligt endpoint uden token – kundesiden poller her
 @router.get("/public")
