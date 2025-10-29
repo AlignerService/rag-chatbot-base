@@ -3,6 +3,7 @@ import os
 import hashlib
 import hmac
 import uuid
+import re
 from typing import Optional
 from datetime import datetime
 
@@ -101,6 +102,77 @@ def _weak_context(chunks, context_text: str, min_words: int = 220, min_sources: 
     words = len((context_text or "").split())
     sources = len(chunks or [])
     return (words < min_words) or (sources < min_sources)
+
+
+# ======================================================
+# Anti-email sanitizer (fail-safe)
+# ======================================================
+_SANITIZE_HEADS = (
+    r"^\s*subject\s*:\s*.*?$",
+    r"^\s*(hi|hej|hello|dear)\s*,?\s*$",
+)
+_SANITIZE_BLOCK_HEADS = (
+    r"^\s*what\s+we\s+need\s*:?\s*$",
+    r"^\s*next\s+steps\s*:?\s*$",
+)
+_SANITIZE_SIGNOFF = (
+    r"^\s*(best|kind)\s+regards.*?$",
+    r"^\s*(med\s+venlig|venlig)\s*hilsen.*?$",
+    r"^\s*(regards|cheers)\s*,?\s*$",
+    r"^\s*(dr\.\s*.*|helle\s+hatt|alignerservice)\s*$",
+)
+_head_re    = [re.compile(p, re.IGNORECASE) for p in _SANITIZE_HEADS]
+_block_re   = [re.compile(p, re.IGNORECASE) for p in _SANITIZE_BLOCK_HEADS]
+_signoff_re = [re.compile(p, re.IGNORECASE) for p in _SANITIZE_SIGNOFF]
+
+def _sanitize_emailish(txt: str) -> str:
+    if not txt:
+        return ""
+    lines = txt.splitlines()
+
+    # 1) Drop "Subject:" / rene hilsner i toppen
+    out = []
+    for li, line in enumerate(lines):
+        if li < 6 and any(r.match(line) for r in _head_re):
+            continue
+        out.append(line)
+    lines = out
+
+    # 2) Fjern blokke "What we need" / "Next steps"
+    def drop_blocks(ls):
+        res = []
+        i = 0
+        while i < len(ls):
+            if any(r.match(ls[i]) for r in _block_re):
+                i += 1
+                while i < len(ls) and ls[i].strip() != "":
+                    i += 1
+                if i < len(ls) and ls[i].strip() == "":
+                    i += 1
+                continue
+            res.append(ls[i]); i += 1
+        return res
+    lines = drop_blocks(lines)
+
+    # 3) Fjern sign-off i bunden (op til 6 linjer)
+    tail = 0
+    for j in range(1, min(6, len(lines)) + 1):
+        if any(r.match(lines[-j].strip()) for r in _signoff_re):
+            tail += 1
+        else:
+            break
+    if tail:
+        lines = lines[:-tail]
+
+    # 4) Kompaktér tomme linjer
+    compact, prev_blank = [], False
+    for line in lines:
+        b = (line.strip() == "")
+        if b and prev_blank:
+            continue
+        compact.append(line)
+        prev_blank = b
+    return "\n".join(compact).strip()
 
 
 # ======================================================
@@ -284,6 +356,9 @@ async def chat_message(request: Request):
             if lang == "da" else
             "Sorry, an internal error occurred. Please try again shortly."
         )
+
+    # Fail-safe: fjern evt. email-artefakter
+    answer_md = _sanitize_emailish(answer_md)
 
     # Gem assistant-besked
     async with aiosqlite.connect(DB_PATH) as db:
