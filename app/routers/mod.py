@@ -387,3 +387,25 @@ async def mod_health(credentials: HTTPAuthorizationCredentials = Depends(bearer)
         return {"ok": True, "db": "ready"}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
+
+# app/routers/mod.py (tilføj nederst)
+
+@router.get("/history")
+async def mod_history(session_id: str, limit: int = 50, credentials: HTTPAuthorizationCredentials = Depends(bearer)):
+    _auth(credentials)
+    if not (session_id or "").strip():
+        raise HTTPException(status_code=400, detail="missing session_id")
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await _ensure_schema(db)  # read
+        sql = """
+        SELECT id, created_at, status, subject, user_text, model_answer, editor_answer, final_public, language
+        FROM moderation_queue
+        WHERE session_id=?
+        ORDER BY id ASC
+        LIMIT ?
+        """
+        async with db.execute(sql, (session_id, max(1, min(int(limit or 50), 200)))) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+    return {"ok": True, "session_id": session_id, "rows": rows}
+
